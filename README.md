@@ -12,7 +12,7 @@ A smart, production-ready web app powered by OpenAI's GPT-3.5 to analyze and imp
 
 ---
 
-🚀 **Live Demo**: [Try it here](https://ai-dispatch-assistant.onrender.com)
+🚀 **Live Demo**: [Try it here](https://resume-matcher-ai.onrender.com/)
 
 🧰 **Tech Stack**:
 - Python · Flask · OpenAI GPT-3.5 · PyMuPDF · ReportLab
