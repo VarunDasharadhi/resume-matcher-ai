@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generated Cover Letter</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h2>✉️ AI-Generated Cover Letter</h2>
+  <pre>{{ cover_letter }}</pre>
+
+  <form action="/download-cover-letter">
+    <button type="submit">⬇️ Download Cover Letter PDF</button>
+  </form>  
+</body>
+</html>

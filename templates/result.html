@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Match Result</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h2>📄 Resume Extracted Text</h2>
+  <pre>{{ resume }}</pre>
+
+  <h2>📝 Job Description</h2>
+  <pre>{{ job_description }}</pre>
+
+  <h2>🎯 GPT Match Analysis</h2>
+<pre>{{ gpt_output }}</pre>
+
+<form method="post" action="/generate-cover-letter">
+    <input type="hidden" name="resume" value="{{ resume }}">
+    <input type="hidden" name="job_description" value="{{ job_description }}">
+    <button type="submit">✍️ Generate Cover Letter</button>
+  </form>
+  
+<form action="/download">
+  <button type="submit">⬇️ Download as PDF</button>
+</form>
+
+</body>
+</html>

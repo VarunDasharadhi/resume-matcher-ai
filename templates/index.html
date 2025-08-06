@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Resume Matcher</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h2>🔍 AI Resume Matcher</h2>
+  <form method="post" enctype="multipart/form-data">
+    <label>📄 Upload Resume (PDF):</label>
+    <input type="file" name="resume" accept=".pdf" required>
+
+    <label>📝 Paste Job Description:</label>
+    <textarea name="job_description" rows="10" required></textarea>
+
+    <input type="submit" value="Analyze Match">
+  </form>
+</body>
+</html>
