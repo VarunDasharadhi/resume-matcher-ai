@@ -46,3 +46,6 @@ home_v2.png
 
 .vercel
 live_home.png
+
+# Ignore all root-level screenshots/artifacts
+/*.png
