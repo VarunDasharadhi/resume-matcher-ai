@@ -1,15 +1,50 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Generated Cover Letter</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <h2>✉️ AI-Generated Cover Letter</h2>
-  <pre>{{ cover_letter }}</pre>
+{% extends "base.html" %}
+{% block title %}Cover Letter | AI Resume Matcher{% endblock %}
 
-  <form action="/download-cover-letter">
-    <button type="submit">⬇️ Download Cover Letter PDF</button>
-  </form>  
-</body>
-</html>
+{% block content %}
+<section class="result-head">
+  <p class="eyebrow"><span class="eyebrow-num">05</span> / Cover letter</p>
+  <form method="post" action="{{ url_for('result') }}" class="back-form">
+    <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
+    <textarea name="job_description" hidden>{{ job_description }}</textarea>
+    <input type="hidden" name="analysis" value="{{ analysis_json }}">
+    <button type="submit" class="back-link back-link--btn">← Back to report</button>
+  </form>
+</section>
+
+<section class="letter-wrap">
+  <article class="letter-paper">
+    <div class="letter-grain" aria-hidden="true"></div>
+    {% for para in cover_letter.split('\n\n') %}
+      {% if para.strip() %}<p>{{ para.strip() }}</p>{% endif %}
+    {% endfor %}
+  </article>
+
+  <div class="letter-actions" data-action-group>
+    <form method="post" action="{{ url_for('download_cover_letter') }}">
+      <textarea name="cover_letter" hidden>{{ cover_letter }}</textarea>
+      <button type="submit" class="cta cta-amber">⬇ Download as PDF</button>
+    </form>
+    <button type="button" class="cta cta-ghost" id="copy-btn">⧉ Copy text</button>
+  </div>
+</section>
+
+<textarea id="letter-source" hidden>{{ cover_letter }}</textarea>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const copyBtn = document.getElementById('copy-btn');
+  copyBtn.addEventListener('click', async () => {
+    const text = document.getElementById('letter-source').value;
+    try {
+      await navigator.clipboard.writeText(text);
+      const orig = copyBtn.textContent;
+      copyBtn.textContent = '✓ Copied';
+      setTimeout(() => { copyBtn.textContent = orig; }, 1800);
+    } catch (e) {
+      copyBtn.textContent = 'Press Ctrl+C';
+    }
+  });
+</script>
+{% endblock %}

@@ -1,2 +1,48 @@
-".env" 
-.env 
+# Secrets
+.env
+".env"
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+
+# Uploaded / generated files (keep folder, ignore contents)
+uploads/*
+!uploads/.gitkeep
+
+# Test & dev artifacts
+sample_resume.pdf
+sample_resume.docx
+sample_bad.*
+*_smoke.pdf
+*_dl.pdf
+followed.html
+.playwright-mcp/
+home.png
+result.png
+result_mobile.png
+result_docx.png
+cover.png
+dropzone_error.png
+dropzone_ok.png
+nofile_guard.png
+nofile_guard2.png
+result_ai.png
+cover_ai.png
+btn_feedback.png
+final_home.png
+
+# OS / editor
+.DS_Store
+Thumbs.db
+home_v2.png
+
+.vercel
+live_home.png

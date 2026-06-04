@@ -1,19 +1,183 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>AI Resume Matcher</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <h2>🔍 AI Resume Matcher</h2>
-  <form method="post" enctype="multipart/form-data">
-    <label>📄 Upload Resume (PDF):</label>
-    <input type="file" name="resume" accept=".pdf" required>
+{% extends "base.html" %}
+{% block title %}AI Resume Matcher | score your résumé against any job{% endblock %}
 
-    <label>📝 Paste Job Description:</label>
-    <textarea name="job_description" rows="10" required></textarea>
+{% block content %}
+<section class="hero">
+  <p class="eyebrow"><span class="eyebrow-num">01</span> / Tailor your application</p>
+  <h1 class="hero-title">
+    Find out how well your<br>
+    résumé <em>actually</em> matches<br>
+    the job.
+  </h1>
+  <p class="hero-lead">
+    Upload your résumé, paste a job description, and get an instant match score,
+    a clear skill-gap breakdown, tailored fixes, and a ready-to-send cover
+    letter. All in a few seconds.
+  </p>
+</section>
 
-    <input type="submit" value="Analyze Match">
+<section class="panel" aria-label="Analyze your resume">
+  <form class="analyze-form" method="post" action="{{ url_for('analyze') }}"
+        enctype="multipart/form-data" id="analyze-form">
+
+    <div class="field">
+      <label class="field-label" for="resume-input">
+        <span class="field-num">A</span> Your résumé
+        <span class="field-hint">PDF or Word (.doc, .docx) · max 4 MB</span>
+      </label>
+      <div class="dropzone" id="dropzone" role="button" tabindex="0"
+           aria-label="Upload your résumé. PDF or Word file, max 4 megabytes.">
+        <div class="dropzone-inner">
+          <div class="dropzone-icon" aria-hidden="true">⌃</div>
+          <p class="dropzone-title" id="dropzone-title">Drop your PDF or Word file here</p>
+          <p class="dropzone-sub" id="dropzone-sub">or click to browse (PDF, .doc, .docx)</p>
+        </div>
+      </div>
+      <input type="file" name="resume" id="resume-input"
+             accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+             hidden>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="jd-input">
+        <span class="field-num">B</span> Job description
+        <button type="button" class="sample-btn" id="sample-btn">Use a sample</button>
+      </label>
+      <textarea name="job_description" id="jd-input" rows="9" required
+        placeholder="Paste the full job description here, including the responsibilities and requirements."></textarea>
+    </div>
+
+    <button type="submit" class="cta" id="submit-btn">
+      <span class="cta-label">Analyze match</span>
+      <span class="cta-arrow" aria-hidden="true">→</span>
+      <span class="cta-spinner" aria-hidden="true"></span>
+    </button>
+    <p class="form-note">
+      {% if ai_available %}
+        Powered by {{ provider_label }}. Your résumé is processed in-memory and not stored long-term.
+      {% else %}
+        Running on the built-in local engine. It works fully offline, with no API key needed.
+      {% endif %}
+    </p>
   </form>
-</body>
-</html>
+</section>
+
+<section class="how">
+  <p class="eyebrow"><span class="eyebrow-num">02</span> / How it works</p>
+  <div class="how-grid">
+    <article class="how-card">
+      <span class="how-step">01</span>
+      <h3>Score</h3>
+      <p>A 0 to 100 match score from comparing your skills against what the role asks for.</p>
+    </article>
+    <article class="how-card">
+      <span class="how-step">02</span>
+      <h3>Gap analysis</h3>
+      <p>See exactly which required skills you have, and which ones are missing.</p>
+    </article>
+    <article class="how-card">
+      <span class="how-step">03</span>
+      <h3>Cover letter</h3>
+      <p>Generate a tailored cover letter and download everything as polished PDFs.</p>
+    </article>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const input = document.getElementById('resume-input');
+  const dz = document.getElementById('dropzone');
+  const dzTitle = document.getElementById('dropzone-title');
+  const dzSub = document.getElementById('dropzone-sub');
+  const form = document.getElementById('analyze-form');
+  const submitBtn = document.getElementById('submit-btn');
+
+  const ALLOWED = ['.pdf', '.doc', '.docx'];
+  const MAX_BYTES = 4 * 1024 * 1024;
+
+  function extOf(name) {
+    const i = name.lastIndexOf('.');
+    return i < 0 ? '' : name.slice(i).toLowerCase();
+  }
+
+  function showError(msg) {
+    dz.classList.remove('has-file');
+    dz.classList.add('has-error');
+    dzTitle.textContent = 'That file will not work';
+    dzSub.textContent = msg;
+    submitBtn.disabled = true;
+  }
+
+  function showFile(file) {
+    if (!file) return;
+    const ext = extOf(file.name);
+    if (!ALLOWED.includes(ext)) {
+      input.value = '';
+      showError('Please upload a PDF or Word file (.pdf, .doc or .docx).');
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      input.value = '';
+      showError('File is over 4 MB. Please upload a smaller document.');
+      return;
+    }
+    dz.classList.remove('has-error');
+    dz.classList.add('has-file');
+    dzTitle.textContent = file.name;
+    dzSub.textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB · ready';
+    submitBtn.disabled = false;
+  }
+
+  // Open the native file picker. The input lives OUTSIDE the dropzone, so its
+  // click never bubbles back here, so exactly one picker opens per activation.
+  dz.addEventListener('click', () => input.click());
+  dz.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+  });
+
+  input.addEventListener('change', () => showFile(input.files[0]));
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dz.addEventListener(evt, e => { e.preventDefault(); dz.classList.add('is-drag'); }));
+  ['dragleave', 'drop'].forEach(evt =>
+    dz.addEventListener(evt, e => { e.preventDefault(); dz.classList.remove('is-drag'); }));
+  dz.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file) { input.files = e.dataTransfer.files; showFile(file); }
+  });
+
+  const SAMPLE = `Senior Backend Engineer (Python)
+
+We're hiring a Senior Backend Engineer to design and scale our core platform.
+
+Responsibilities:
+- Build and maintain RESTful APIs and microservices in Python (Django/FastAPI)
+- Design data models in PostgreSQL and optimize query performance
+- Deploy and operate services on AWS using Docker and Kubernetes
+- Implement CI/CD pipelines and automated testing (TDD)
+- Collaborate cross-functionally with product and frontend teams
+
+Requirements:
+- 5+ years building backend systems in Python
+- Strong experience with Django or FastAPI, PostgreSQL, and Redis
+- Hands-on AWS, Docker, Kubernetes and CI/CD
+- Solid grasp of system design and REST API design
+- Excellent communication and a collaborative, agile mindset`;
+
+  document.getElementById('sample-btn').addEventListener('click', () => {
+    document.getElementById('jd-input').value = SAMPLE;
+  });
+
+  form.addEventListener('submit', e => {
+    if (!input.files || !input.files.length) {
+      e.preventDefault();
+      showError('Please choose a PDF or Word (.docx) file first.');
+      dz.focus();
+      return;
+    }
+    submitBtn.classList.add('is-loading');
+    submitBtn.disabled = true;
+  });
+</script>
+{% endblock %}

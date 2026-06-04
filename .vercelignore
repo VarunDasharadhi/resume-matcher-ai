@@ -1,0 +1,20 @@
+# Keep the deployment small and free of secrets / local artifacts.
+.env
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+uploads/
+tests/
+.git/
+.github/
+.claude/
+.playwright-mcp/
+*.png
+sample_resume.*
+HANDOFF.md
+runtime.txt
+Procfile
+requirements-dev.txt

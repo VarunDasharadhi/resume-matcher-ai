@@ -1,28 +1,129 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Match Result</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <h2>📄 Resume Extracted Text</h2>
-  <pre>{{ resume }}</pre>
+{% extends "base.html" %}
+{% block title %}Match Report | AI Resume Matcher{% endblock %}
 
-  <h2>📝 Job Description</h2>
-  <pre>{{ job_description }}</pre>
+{% block content %}
+<section class="result-head">
+  <p class="eyebrow">
+    <span class="eyebrow-num">03</span> / Match report
+    <span class="src-tag {% if analysis.source == 'ai' %}src-ai{% endif %}">
+      {{ 'AI analysis' if analysis.source == 'ai' else 'Local analysis' }}
+    </span>
+  </p>
+  <a class="back-link" href="{{ url_for('index') }}">← Analyze another</a>
+</section>
 
-  <h2>🎯 GPT Match Analysis</h2>
-<pre>{{ gpt_output }}</pre>
+<section class="score-block">
+  <div class="gauge" data-score="{{ analysis.score }}">
+    <svg viewBox="0 0 200 200" class="gauge-svg" aria-hidden="true">
+      <circle class="gauge-track" cx="100" cy="100" r="86"></circle>
+      <circle class="gauge-fill" cx="100" cy="100" r="86"></circle>
+    </svg>
+    <div class="gauge-center">
+      <span class="gauge-num" id="gauge-num">0</span>
+      <span class="gauge-unit">/100</span>
+    </div>
+  </div>
+  <div class="score-copy">
+    <h1 class="score-verdict" id="score-verdict">Match score</h1>
+    <p class="score-summary">{{ analysis.summary }}</p>
+    <div class="score-actions" data-action-group>
+      <form method="post" action="{{ url_for('cover_letter') }}" id="cl-form">
+        <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
+        <textarea name="job_description" hidden>{{ job_description }}</textarea>
+        <input type="hidden" name="analysis" value="{{ analysis_json }}">
+        <button type="submit" class="cta cta-amber" id="cl-btn">
+          <span class="cta-label">✍ Generate cover letter</span>
+          <span class="cta-spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('download_report') }}">
+        <input type="hidden" name="analysis" value="{{ analysis_json }}">
+        <button type="submit" class="cta cta-ghost">⬇ Download report PDF</button>
+      </form>
+    </div>
+  </div>
+</section>
 
-<form method="post" action="/generate-cover-letter">
-    <input type="hidden" name="resume" value="{{ resume }}">
-    <input type="hidden" name="job_description" value="{{ job_description }}">
-    <button type="submit">✍️ Generate Cover Letter</button>
-  </form>
-  
-<form action="/download">
-  <button type="submit">⬇️ Download as PDF</button>
-</form>
+<section class="skills-grid">
+  <div class="skill-col skill-col--match">
+    <h2 class="skill-head"><span class="skill-tick">✓</span> Matching skills
+      <span class="skill-count">{{ analysis.matching_skills | length }}</span>
+    </h2>
+    {% if analysis.matching_skills %}
+    <ul class="chips">
+      {% for s in analysis.matching_skills %}<li class="chip chip--match">{{ s }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No overlapping skills detected.</p>
+    {% endif %}
+  </div>
 
-</body>
-</html>
+  <div class="skill-col skill-col--miss">
+    <h2 class="skill-head"><span class="skill-cross">✕</span> Missing skills
+      <span class="skill-count">{{ analysis.missing_skills | length }}</span>
+    </h2>
+    {% if analysis.missing_skills %}
+    <ul class="chips">
+      {% for s in analysis.missing_skills %}<li class="chip chip--miss">{{ s }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Nothing missing. You cover every required skill. 🎯</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="suggestions">
+  <p class="eyebrow"><span class="eyebrow-num">04</span> / How to improve</p>
+  <ol class="sugg-list">
+    {% for s in analysis.suggestions %}
+    <li class="sugg-item"><span class="sugg-num">{{ '%02d' % loop.index }}</span><p>{{ s }}</p></li>
+    {% endfor %}
+  </ol>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const gauge = document.querySelector('.gauge');
+    const fill = document.querySelector('.gauge-fill');
+    const numEl = document.getElementById('gauge-num');
+    const verdict = document.getElementById('score-verdict');
+    const score = parseInt(gauge.dataset.score, 10) || 0;
+
+    const r = 86, circ = 2 * Math.PI * r;
+    fill.style.strokeDasharray = circ;
+    fill.style.strokeDashoffset = circ;
+
+    let hue = '#e0533a';            // low: coral
+    if (score >= 80) hue = '#7fb069'; // high: sage green
+    else if (score >= 50) hue = '#e0a83d'; // mid: amber
+    fill.style.stroke = hue;
+    numEl.style.color = hue;
+    verdict.textContent = score >= 80 ? 'Strong match'
+      : score >= 50 ? 'Moderate match' : 'Needs work';
+
+    requestAnimationFrame(() => {
+      fill.style.strokeDashoffset = circ * (1 - score / 100);
+    });
+
+    const dur = 1100, start = performance.now();
+    function tick(now) {
+      const p = Math.min((now - start) / dur, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      numEl.textContent = Math.round(eased * score);
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    const clForm = document.getElementById('cl-form');
+    if (clForm) {
+      clForm.addEventListener('submit', () => {
+        const btn = document.getElementById('cl-btn');
+        btn.classList.add('is-loading');
+        btn.disabled = true;
+      });
+    }
+  })();
+</script>
+{% endblock %}

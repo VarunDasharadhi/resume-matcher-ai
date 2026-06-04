@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AI Resume Matcher{% endblock %}</title>
+  <meta name="description" content="Match your resume to any job description. Get an instant score, skill gap analysis, tailored suggestions, and an AI-written cover letter.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="glow" aria-hidden="true"></div>
+
+  <header class="site-head">
+    <a class="brand" href="{{ url_for('index') }}">
+      <span class="brand-mark">◎</span>
+      <span class="brand-name">Résumé<em>Match</em></span>
+    </a>
+    <nav class="site-nav">
+      <span class="status-dot {% if ai_available %}is-ai{% endif %}"></span>
+      <span class="status-text">
+        {% if ai_available %}AI engine online{% else %}Local engine{% endif %}
+      </span>
+    </nav>
+  </header>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash-stack">
+        {% for message in messages %}
+          <div class="flash" role="alert">
+            <span class="flash-icon">!</span>{{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-foot">
+    <span>Built with Flask · {{ provider_label }} · ReportLab</span>
+    <span class="foot-sep">·</span>
+    <a href="https://github.com/VarunDasharadhi/resume-matcher-ai" target="_blank" rel="noopener">Source</a>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+
+  <script>
+    // Shared click feedback: within an [data-action-group], clicking one action
+    // marks it active and dims the siblings so it's clear what was clicked and
+    // users don't double-trigger. Transient actions (downloads, plain buttons)
+    // auto-restore; navigations/submits stay until the page changes.
+    document.querySelectorAll('[data-action-group]').forEach(group => {
+      const items = Array.from(group.querySelectorAll('button, a.cta'));
+      items.forEach(item => {
+        item.addEventListener('click', () => {
+          if (item.classList.contains('is-dimmed') || item.disabled) return;
+          const form = item.closest('form');
+          const action = form ? (form.getAttribute('action') || '') : '';
+          const isDownload = item.hasAttribute('download') ||
+            (item.getAttribute('href') || '').includes('/download/') ||
+            action.includes('/download/');
+          const navigates = !isDownload && (
+            item.tagName === 'A' ||
+            (item.tagName === 'BUTTON' && item.type === 'submit'));
+
+          item.classList.add('is-active');
+          items.forEach(other => { if (other !== item) other.classList.add('is-dimmed'); });
+
+          if (!navigates) {
+            setTimeout(() => {
+              item.classList.remove('is-active');
+              items.forEach(other => other.classList.remove('is-dimmed'));
+            }, 1800);
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
