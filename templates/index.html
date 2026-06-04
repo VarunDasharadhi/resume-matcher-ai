@@ -3,17 +3,37 @@
 
 {% block content %}
 <section class="hero">
-  <p class="eyebrow"><span class="eyebrow-num">01</span> / Tailor your application</p>
-  <h1 class="hero-title">
-    Find out how well your<br>
-    résumé <em>actually</em> matches<br>
-    the job.
-  </h1>
-  <p class="hero-lead">
-    Upload your résumé, paste a job description, and get an instant match score,
-    a clear skill-gap breakdown, tailored fixes, and a ready-to-send cover
-    letter. All in a few seconds.
-  </p>
+  <div class="hero-text">
+    <p class="eyebrow"><span class="eyebrow-num">01</span> / Tailor your application</p>
+    <h1 class="hero-title">
+      Find out how well your résumé <em>actually</em> matches the job.
+    </h1>
+    <p class="hero-lead">
+      Upload your résumé, paste a job description, and get an instant match score,
+      a clear skill-gap breakdown, tailored fixes, and a ready-to-send cover
+      letter. All in a few seconds.
+    </p>
+  </div>
+
+  <aside class="hero-preview" aria-hidden="true">
+    <div class="preview-card">
+      <span class="preview-tag">Sample report</span>
+      <div class="preview-gauge">
+        <svg viewBox="0 0 120 120">
+          <circle class="pg-track" cx="60" cy="60" r="52"></circle>
+          <circle class="pg-fill" cx="60" cy="60" r="52"
+                  stroke-dasharray="326.7" stroke-dashoffset="26.1"></circle>
+        </svg>
+        <div class="preview-num">92<span>/100</span></div>
+      </div>
+      <p class="preview-verdict">Strong match</p>
+      <div class="preview-chips">
+        <span class="pchip pchip--match">Python ✓</span>
+        <span class="pchip pchip--match">AWS ✓</span>
+        <span class="pchip pchip--miss">Docker</span>
+      </div>
+    </div>
+  </aside>
 </section>
 
 <section class="panel" aria-label="Analyze your resume">
