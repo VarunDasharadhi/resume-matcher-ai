@@ -20,7 +20,7 @@
   --shadow:     0 24px 60px -20px rgba(0,0,0,.7);
   --radius:     18px;
   --radius-sm:  11px;
-  --maxw:       960px;
+  --maxw:       1140px;
   --serif: "Fraunces", Georgia, serif;
   --sans: "Hanken Grotesk", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
@@ -132,8 +132,8 @@ body {
 /* ============ HERO ============ */
 .hero {
   padding: 64px 0 36px;
-  display: grid; grid-template-columns: 1.15fr 0.85fr;
-  gap: 52px; align-items: center;
+  display: grid; grid-template-columns: 1fr 360px;
+  gap: 56px; align-items: center;
 }
 .hero-title {
   font-family: var(--serif); font-weight: 600;
@@ -141,7 +141,7 @@ body {
   letter-spacing: -.025em; margin: 0 0 26px;
 }
 .hero-title em { font-style: italic; color: var(--amber); font-weight: 500; }
-.hero-lead { max-width: 30ch; font-size: 1.12rem; color: var(--cream-dim); margin: 0; }
+.hero-lead { max-width: none; font-size: 1.12rem; color: var(--cream-dim); margin: 0; }
 
 .hero-text > * { animation: rise .7s cubic-bezier(.2,.85,.3,1) both; }
 .hero-text .eyebrow { animation-delay: .02s; }
@@ -172,13 +172,13 @@ body {
 .preview-gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
 .pg-track { fill: none; stroke: var(--line); stroke-width: 10; }
 .pg-fill {
-  fill: none; stroke: var(--sage); stroke-width: 10; stroke-linecap: round;
+  fill: none; stroke: var(--coral); stroke-width: 10; stroke-linecap: round;
   animation: pg-draw 1.4s cubic-bezier(.2,.8,.2,1) .5s both;
 }
 @keyframes pg-draw { from { stroke-dashoffset: 326.7; } }
 .preview-num {
   position: absolute; inset: 0; display: grid; place-content: center;
-  font-family: var(--serif); font-size: 2.6rem; font-weight: 600; color: var(--sage);
+  font-family: var(--serif); font-size: 2.6rem; font-weight: 600; color: var(--coral);
 }
 .preview-num span { font-family: var(--mono); font-size: .7rem; color: var(--muted); }
 .preview-verdict { font-family: var(--serif); font-size: 1.3rem; margin: 0 0 14px; }

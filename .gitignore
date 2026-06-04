@@ -49,3 +49,4 @@ live_home.png
 
 # Ignore all root-level screenshots/artifacts
 /*.png
+/*.pdf
