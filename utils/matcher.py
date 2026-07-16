@@ -14,8 +14,9 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 
-# Canonical skill name -> list of aliases/spellings to match (case-insensitive).
-# The canonical name is what we report; any alias in the text counts as a hit.
+# Canonical skill name -> list of aliases/spellings to match. The canonical
+# name is what we report; any alias in the text counts as a hit. Aliases are
+# case-insensitive unless written with an uppercase letter (see _alias_flags).
 SKILL_LIBRARY: Dict[str, List[str]] = {
     # Languages
     "Python": ["python"],
@@ -24,14 +25,14 @@ SKILL_LIBRARY: Dict[str, List[str]] = {
     "Java": ["java"],
     "C++": [r"c\+\+", "cpp"],
     "C#": [r"c#", r"c♯", "csharp"],
-    "Go": ["golang", "go"],
+    "Go": ["golang", "Go"],
     "Rust": ["rust"],
     "Ruby": ["ruby"],
     "PHP": ["php"],
-    "Swift": ["swift"],
+    "Swift": ["Swift"],
     "Kotlin": ["kotlin"],
     "Scala": ["scala"],
-    "R": [r"\br\b"],
+    "R": [r"R(?!&)"],  # skip R&D
     "SQL": ["sql"],
     "Bash": ["bash", "shell scripting", "shell"],
     "HTML": ["html", "html5"],
@@ -49,16 +50,16 @@ SKILL_LIBRARY: Dict[str, List[str]] = {
     "Vite": ["vite"],
     # Backend / frameworks
     "Node.js": ["node.js", "nodejs", "node"],
-    "Express": ["express", "express.js"],
+    "Express": ["express.js", "expressjs", "Express"],
     "Django": ["django"],
     "Flask": ["flask"],
     "FastAPI": ["fastapi"],
-    "Spring": ["spring boot", "spring"],
-    "Rails": ["ruby on rails", "rails"],
+    "Spring": ["spring boot", r"Spring(?!\s+20\d\d)"],  # skip "Spring 2026"
+    "Rails": ["ruby on rails", "Rails"],
     "Laravel": ["laravel"],
     ".NET": [r"\.net", "dotnet", "asp.net"],
     "GraphQL": ["graphql"],
-    "REST APIs": ["rest api", "rest apis", "restful", "rest"],
+    "REST APIs": ["rest api", "rest apis", "restful", "REST"],
     "gRPC": ["grpc"],
     "Microservices": ["microservice", "microservices"],
     # Data / ML
@@ -76,7 +77,7 @@ SKILL_LIBRARY: Dict[str, List[str]] = {
     "Hadoop": ["hadoop"],
     "Tableau": ["tableau"],
     "Power BI": ["power bi", "powerbi"],
-    "Excel": ["excel"],
+    "Excel": ["Excel", "microsoft excel", "ms excel"],
     "ETL": ["etl"],
     "Airflow": ["airflow"],
     # Databases
@@ -105,6 +106,24 @@ SKILL_LIBRARY: Dict[str, List[str]] = {
     "Nginx": ["nginx"],
     "Kafka": ["kafka"],
     "RabbitMQ": ["rabbitmq"],
+    # AI engineering / LLM stack
+    "LLMs": ["llm", "llms", "large language model", "large language models"],
+    "Prompt Engineering": ["prompt engineering", "prompting", "prompt design"],
+    "AI Agents": ["ai agent", "ai agents", "agents", "agentic", "sub-agents", "subagents", "multi-agent"],
+    "RAG": ["rag", "retrieval-augmented generation", "retrieval augmented generation"],
+    "Embeddings": ["embedding", "embeddings", "vector search", "vector database", "vector databases"],
+    "Fine-tuning": ["fine-tuning", "fine tuning", "finetuning"],
+    "LLM Evaluation": ["evals", "evaluation framework", "evaluation frameworks", "llm evaluation"],
+    "MCP": ["mcp", "model context protocol", "mcp server", "mcp servers"],
+    "Claude API": ["claude", "anthropic api", "claude api", "claude code"],
+    "OpenAI API": ["openai api", "gpt-4", "gpt-4o", "chatgpt api"],
+    "Gemini": ["gemini"],
+    "LangChain": ["langchain"],
+    "LangGraph": ["langgraph"],
+    "Generative AI": ["generative ai", "genai", "gen ai"],
+    "Browser Automation": ["browser automation", "playwright", "puppeteer", "selenium"],
+    "Workflow Orchestration": ["trigger.dev", "temporal", "workflow orchestration", "background jobs"],
+    "Structured Outputs": ["structured output", "structured outputs", "function calling", "tool use", "tool calling"],
     # Practices / methods
     "Agile": ["agile"],
     "Scrum": ["scrum"],
@@ -146,9 +165,20 @@ def _alias_pattern(alias: str) -> str:
     return r"(?<![A-Za-z0-9])" + core + r"(?![A-Za-z0-9])"
 
 
+def _alias_flags(alias: str) -> int:
+    """Aliases written with an uppercase letter must match that exact casing.
+
+    Words like ``Go``, ``Swift``, ``Excel`` or ``REST`` are also common
+    English words; requiring the proper-noun casing avoids false positives
+    ("go the extra mile", "excel at", "the rest of the team"). All-lowercase
+    aliases keep matching case-insensitively.
+    """
+    return 0 if any(ch.isupper() for ch in alias) else re.IGNORECASE
+
+
 # Pre-compile one combined check per canonical skill for speed.
 _COMPILED: Dict[str, List[re.Pattern]] = {
-    name: [re.compile(_alias_pattern(a), re.IGNORECASE) for a in aliases]
+    name: [re.compile(_alias_pattern(a), _alias_flags(a)) for a in aliases]
     for name, aliases in SKILL_LIBRARY.items()
 }
 
