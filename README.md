@@ -83,7 +83,7 @@ All optional, see [`.env.example`](.env.example):
 |----------|---------|---------|
 | `OPENROUTER_API_KEY` | _(none)_ | Use OpenRouter (has **free** models). Preferred when set |
 | `OPENAI_API_KEY` | _(none)_ | Use OpenAI directly (when no OpenRouter key) |
-| `OPENAI_MODEL` | provider default | Model id, e.g. `meta-llama/llama-3.3-70b-instruct:free` (OpenRouter) or `gpt-4o-mini` (OpenAI) |
+| `OPENAI_MODEL` | `openrouter/free` (OpenRouter) / `gpt-4o-mini` (OpenAI) | Override to pin a specific model id instead of the auto-router |
 | `APP_URL` | repo URL | Attribution header sent to OpenRouter |
 | `SECRET_KEY` | dev default | Signs Flask session cookies (set in prod!) |
 | `PORT` | `5000` | Local server port |
@@ -109,7 +109,7 @@ redeploy:
 
 ```bash
 npx vercel env add OPENROUTER_API_KEY production   # paste your sk-or-... key
-npx vercel env add OPENAI_MODEL production          # e.g. meta-llama/llama-3.3-70b-instruct:free
+npx vercel env add OPENAI_MODEL production          # optional; defaults to openrouter/free
 npx vercel --prod
 ```
 

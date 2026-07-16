@@ -23,14 +23,16 @@ logger = logging.getLogger(__name__)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-# Fallback chain of free OpenRouter models, tried in order. Free models get
-# rate-limited (429) intermittently and the catalog changes over time, so we
-# try several and finish with the `openrouter/free` auto-router as a catch-all.
-# Override with OPENAI_MODEL / LLM_MODEL (comma-separated for a custom chain).
-DEFAULT_OPENROUTER_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "openrouter/free",
-]
+# `openrouter/free` auto-routes each request to whichever free model is
+# currently healthy, instead of a hardcoded one. Benchmarked 2026-07-17
+# against 5 pinned free models on this app's real analysis prompt: every
+# pinned model either rate-limited immediately or was unreliable (best
+# pinned alternative succeeded 1/2 tries, sometimes truncating its JSON),
+# while the auto-router succeeded 5/5 with a lower median latency. Pinned
+# free-model IDs also rot as OpenRouter's catalog changes (a pinned model
+# from an earlier chain 404'd outright). Override with OPENAI_MODEL /
+# LLM_MODEL (comma-separated) to pin a specific chain instead.
+DEFAULT_OPENROUTER_MODELS = ["openrouter/free"]
 
 
 def _parse_models(value: Optional[str]) -> List[str]:

@@ -23,9 +23,9 @@ def test_provider_config_prefers_openrouter(monkeypatch):
     assert cfg["provider"] == "openrouter"
     assert cfg["api_key"] == "or-key"
     assert "openrouter.ai" in cfg["base_url"]
-    # A fallback chain of free models.
-    assert isinstance(cfg["models"], list) and cfg["models"]
-    assert any(":free" in m for m in cfg["models"])
+    # The auto-router: benchmarked 2026-07-17 against pinned free models and
+    # won on both success rate and latency (see analysis.py comment).
+    assert cfg["models"] == ["openrouter/free"]
 
 
 def test_provider_config_uses_openai_when_only_openai_key(monkeypatch):
