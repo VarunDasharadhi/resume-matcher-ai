@@ -3,15 +3,12 @@
 Covers provider selection (OpenRouter / OpenAI / local), robust JSON parsing
 of model output, and graceful fallback to the local engine.
 """
-from types import SimpleNamespace
+import json
+import logging
+
+import httpx
 
 import utils.analysis as analysis
-
-
-def _fake_response(content):
-    return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-    )
 
 
 # --------------------------------------------------------------------------- #
@@ -127,8 +124,8 @@ def test_analyze_resume_without_key_uses_local(monkeypatch):
     assert isinstance(result["suggestions"], list) and result["suggestions"]
 
 
-def test_analyze_with_ai_falls_through_to_next_model(monkeypatch):
-    """A rate-limited / failing model is skipped; the next one is tried."""
+def test_analyze_with_ai_falls_through_to_next_model(monkeypatch, caplog):
+    """A rate-limited / failing model is skipped (and logged); the next one is tried."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("OPENAI_MODEL", "bad/one:free,good/two:free")
     calls = []
@@ -139,38 +136,33 @@ def test_analyze_with_ai_falls_through_to_next_model(monkeypatch):
         '"suggestions": ["Tighten the summary."]}'
     )
 
-    class FakeCompletions:
-        def create(self, model, **kwargs):
-            calls.append(model)
-            if model.startswith("bad"):
-                raise RuntimeError("429 rate limited")
-            return _fake_response(good_json)
+    def fake_chat(model, prompt, **kwargs):
+        calls.append(model)
+        if model.startswith("bad"):
+            raise RuntimeError("429 rate limited")
+        return good_json
 
-    fake_client = SimpleNamespace(
-        chat=SimpleNamespace(completions=FakeCompletions())
-    )
-    monkeypatch.setattr(analysis, "_client", lambda: fake_client)
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
 
     local = analysis.analyze_match("Python", "Python")
-    result = analysis._analyze_with_ai("Python", "Python developer", local)
+    with caplog.at_level(logging.INFO, logger="utils.analysis"):
+        result = analysis._analyze_with_ai("Python", "Python developer", local)
 
     assert result["score"] == 88
     assert "bad/one:free" in calls
     assert calls[-1] == "good/two:free"
+    # The skipped model is recorded so chronic failures are diagnosable.
+    assert any("bad/one:free" in r.getMessage() for r in caplog.records)
 
 
 def test_analyze_with_ai_raises_when_all_models_fail(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("OPENAI_MODEL", "a:free,b:free")
 
-    class FakeCompletions:
-        def create(self, model, **kwargs):
-            raise RuntimeError("429")
+    def fake_chat(model, prompt, **kwargs):
+        raise RuntimeError("429")
 
-    monkeypatch.setattr(
-        analysis, "_client",
-        lambda: SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())),
-    )
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     local = analysis.analyze_match("Python", "Python")
     try:
         analysis._analyze_with_ai("Python", "Python", local)
@@ -190,6 +182,94 @@ def test_analyze_resume_falls_back_when_ai_errors(monkeypatch):
     result = analysis.analyze_resume("Python", "Python developer needed")
     assert result["source"] == "local"
     assert 0 <= result["score"] <= 100
+
+
+def test_analyze_resume_logs_ai_failure(monkeypatch, caplog):
+    """AI failures must leave a trace in the logs, not vanish silently."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(analysis, "_analyze_with_ai", boom)
+    with caplog.at_level(logging.WARNING, logger="utils.analysis"):
+        result = analysis.analyze_resume("Python", "Python developer needed")
+    assert result["source"] == "local"
+    assert any("network down" in r.getMessage() for r in caplog.records)
+
+
+def test_http_client_is_reused_for_same_config(monkeypatch):
+    """Warm serverless instances should reuse the HTTP client, not rebuild it."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    first = analysis._http_client()
+    assert analysis._http_client() is first
+    # A config change must produce a fresh client, never a stale one.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "another-key")
+    assert analysis._http_client() is not first
+
+
+def test_http_client_carries_auth_and_base_url(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    client = analysis._http_client()
+    assert "openrouter.ai" in str(client.base_url)
+    assert client.headers["Authorization"] == "Bearer or-key"
+    assert client.headers["X-Title"]  # OpenRouter attribution
+
+    # Plain OpenAI: default API base, no attribution headers.
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    monkeypatch.setenv("OPENAI_API_KEY", "oa-key")
+    client = analysis._http_client()
+    assert "api.openai.com" in str(client.base_url)
+    assert client.headers["Authorization"] == "Bearer oa-key"
+
+
+def test_chat_completion_posts_payload_and_parses_content(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    captured = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "  hi there  "}}]}
+        )
+
+    fake = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    monkeypatch.setattr(analysis, "_http_client", lambda: fake)
+
+    out = analysis._chat_completion("some/model:free", "PROMPT", 0.3, 99)
+    assert out == "hi there"
+    assert captured["url"].endswith("/api/v1/chat/completions")
+    assert captured["body"]["model"] == "some/model:free"
+    assert captured["body"]["messages"] == [{"role": "user", "content": "PROMPT"}]
+    assert captured["body"]["temperature"] == 0.3
+    assert captured["body"]["max_tokens"] == 99
+
+
+def test_chat_completion_raises_on_http_error(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+    fake = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(429, json={"error": "rate limited"})
+        ),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    monkeypatch.setattr(analysis, "_http_client", lambda: fake)
+
+    try:
+        analysis._chat_completion("some/model:free", "PROMPT", 0.3, 99)
+        assert False, "expected an exception on HTTP 429"
+    except httpx.HTTPStatusError:
+        pass
 
 
 def test_cover_letter_without_key_is_real_text(monkeypatch):

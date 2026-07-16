@@ -1,5 +1,7 @@
-"""Analysis orchestration: use OpenAI when available, else a local engine.
+"""Analysis orchestration: use an LLM provider when available, else local.
 
+The providers (OpenRouter or OpenAI) are called over their plain REST
+chat-completions API with a pooled httpx client, no provider SDK needed.
 Every public function returns the same normalized shape regardless of which
 backend produced it, so the rest of the app never has to care whether an API
 key is configured.
@@ -7,20 +9,25 @@ key is configured.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+import httpx
 
 from utils.matcher import analyze_match, extract_skills
 
+logger = logging.getLogger(__name__)
+
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 # Fallback chain of free OpenRouter models, tried in order. Free models get
 # rate-limited (429) intermittently and the catalog changes over time, so we
 # try several and finish with the `openrouter/free` auto-router as a catch-all.
 # Override with OPENAI_MODEL / LLM_MODEL (comma-separated for a custom chain).
 DEFAULT_OPENROUTER_MODELS = [
-    "openai/gpt-oss-120b:free",
     "meta-llama/llama-3.3-70b-instruct:free",
     "openrouter/free",
 ]
@@ -115,9 +122,9 @@ def analyze_resume(resume_text: str, job_description: str) -> Dict:
             ai = _analyze_with_ai(resume_text, job_description, local)
             ai["source"] = "ai"
             return _clean_result(ai)
-        except Exception:
+        except Exception as exc:
             # Any AI failure (auth, network, quota, bad JSON) -> graceful local.
-            pass
+            logger.warning("AI analysis failed, falling back to local: %s", exc)
 
     local["summary"] = _local_summary(local)
     local["source"] = "local"
@@ -129,33 +136,61 @@ def generate_cover_letter(resume_text: str, job_description: str) -> str:
     if ai_available():
         try:
             return _strip_dashes(_cover_letter_with_ai(resume_text, job_description))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("AI cover letter failed, falling back to local: %s", exc)
     return _strip_dashes(_cover_letter_local(resume_text, job_description))
 
 
 # --------------------------------------------------------------------------- #
 # AI backend
 # --------------------------------------------------------------------------- #
-def _client():
-    """Build an OpenAI-SDK client pointed at the configured provider."""
-    from openai import OpenAI
+# (config key, client) pair so warm serverless instances reuse the HTTP
+# connection pool instead of paying a new TLS handshake on every request.
+_client_cache: Optional[Tuple[tuple, httpx.Client]] = None
+
+
+def _http_client() -> httpx.Client:
+    """Build (or reuse) a pooled HTTP client for the configured provider."""
+    global _client_cache
 
     cfg = _provider_config()
-    # Fail fast (no SDK-level retry/backoff) so we can move to the next model
-    # in the chain quickly instead of hanging on a rate-limited one.
-    kwargs = {"api_key": cfg["api_key"], "max_retries": 0, "timeout": 30.0}
-    if cfg.get("base_url"):
-        kwargs["base_url"] = cfg["base_url"]
+    base_url = cfg.get("base_url") or OPENAI_BASE_URL
+    cache_key = (cfg["provider"], cfg["api_key"], base_url)
+    if _client_cache and _client_cache[0] == cache_key:
+        return _client_cache[1]
+
+    headers = {"Authorization": f"Bearer {cfg['api_key']}"}
     if cfg["provider"] == "openrouter":
         # Optional but recommended attribution headers for OpenRouter.
-        kwargs["default_headers"] = {
-            "HTTP-Referer": os.getenv(
-                "APP_URL", "https://github.com/VarunDasharadhi/resume-matcher-ai"
-            ),
-            "X-Title": "AI Resume Matcher",
-        }
-    return OpenAI(**kwargs)
+        headers["HTTP-Referer"] = os.getenv(
+            "APP_URL", "https://github.com/VarunDasharadhi/resume-matcher-ai"
+        )
+        headers["X-Title"] = "AI Resume Matcher"
+    # No retries/backoff: fail fast so we move to the next model in the chain
+    # quickly instead of hanging on a rate-limited one.
+    client = httpx.Client(base_url=base_url, headers=headers, timeout=30.0)
+    _client_cache = (cache_key, client)
+    return client
+
+
+def _chat_completion(model: str, prompt: str, temperature: float, max_tokens: int) -> str:
+    """POST one chat completion and return the message text.
+
+    Raises on HTTP errors or a malformed response body, so callers can move
+    on to the next model in the chain.
+    """
+    response = _http_client().post(
+        "chat/completions",
+        json={
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        },
+    )
+    response.raise_for_status()
+    data = response.json()
+    return (data["choices"][0]["message"]["content"] or "").strip()
 
 
 def _extract_json(text: str) -> Dict:
@@ -180,7 +215,6 @@ def _analyze_with_ai(resume_text: str, job_description: str, local: Dict) -> Dic
     Tries each model in the configured chain until one returns parseable JSON;
     raises the last error if all fail (caller falls back to the local engine).
     """
-    client = _client()
     models = _provider_config()["models"]
     prompt = f"""You are an expert technical recruiter and resume coach.
 Compare the RESUME against the JOB DESCRIPTION and respond with STRICT JSON
@@ -204,16 +238,14 @@ RESUME:
 JOB DESCRIPTION:
 {job_description[:4000]}
 """
-    messages = [{"role": "user", "content": prompt}]
     last_error: Optional[Exception] = None
     for model in models:
         try:
-            response = client.chat.completions.create(
-                model=model, messages=messages, temperature=0.3, max_tokens=900,
-            )
-            data = _extract_json(response.choices[0].message.content)
+            content = _chat_completion(model, prompt, temperature=0.3, max_tokens=900)
+            data = _extract_json(content)
             return _normalize_ai(data, local)
         except Exception as exc:  # rate-limit, 404, bad JSON, etc. -> next model
+            logger.info("model %s failed, trying next: %s", model, exc)
             last_error = exc
     raise last_error if last_error else RuntimeError("no models configured")
 
@@ -243,7 +275,6 @@ def _normalize_ai(data: Dict, local: Dict) -> Dict:
 
 
 def _cover_letter_with_ai(resume_text: str, job_description: str) -> str:
-    client = _client()
     models = _provider_config()["models"]
     prompt = f"""Write a professional, tailored cover letter.
 
@@ -262,17 +293,14 @@ Requirements:
 - Avoid buzzwords and cliches (no 'synergy', 'leverage', 'I am writing to express')
 - 200-280 words, ready to send (no placeholders like [Your Name] beyond a sign-off)
 """
-    messages = [{"role": "user", "content": prompt}]
     last_error: Optional[Exception] = None
     for model in models:
         try:
-            response = client.chat.completions.create(
-                model=model, messages=messages, temperature=0.5, max_tokens=600,
-            )
-            text = (response.choices[0].message.content or "").strip()
+            text = _chat_completion(model, prompt, temperature=0.5, max_tokens=600)
             if text:
                 return text
         except Exception as exc:
+            logger.info("model %s failed, trying next: %s", model, exc)
             last_error = exc
     if last_error:
         raise last_error

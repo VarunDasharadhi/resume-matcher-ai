@@ -98,6 +98,28 @@ def test_result_repost_rerenders(client):
     assert b"Docker" in resp.data
 
 
+def test_result_with_malformed_json_redirects(client):
+    """Tampered/corrupted carried data must not produce a 500."""
+    resp = client.post("/result", data={
+        "analysis": "not-json{{{", "resume_text": "", "job_description": "",
+    })
+    assert resp.status_code == 302
+
+
+def test_result_with_partial_analysis_renders_with_defaults(client):
+    """Missing keys are defaulted so the template never crashes."""
+    resp = client.post("/result", data={
+        "analysis": "{}", "resume_text": "", "job_description": "",
+    })
+    assert resp.status_code == 200
+    assert b"Match report" in resp.data
+
+
+def test_download_report_with_malformed_json_redirects(client):
+    resp = client.post("/download/report", data={"analysis": "]["})
+    assert resp.status_code == 302
+
+
 def test_download_report_returns_pdf(client):
     analysis = {
         "score": 80, "summary": "Good.", "matching_skills": ["Python"],

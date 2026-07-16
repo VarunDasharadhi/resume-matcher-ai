@@ -22,8 +22,8 @@ PDFs.
 - **Actionable suggestions** tailored to the specific role
 - **AI-generated cover letter** (or a solid template-based one offline)
 - **PDF export** of both the match report and the cover letter
-- **Graceful fallback**, any OpenAI error (no key, quota, network) silently
-  falls back to the local engine; the user always gets a result
+- **Graceful fallback**, any AI-provider error (no key, quota, network) is
+  logged and falls back to the local engine; the user always gets a result
 - **Robust UX**, drag-and-drop upload, sample job description, loading states,
   input validation, flash errors, and a fully responsive layout
 
@@ -34,7 +34,7 @@ PDFs.
 | Layer | Tooling |
 |------|---------|
 | Backend | Python · Flask |
-| Analysis | OpenRouter / OpenAI (optional) · custom local skill-matching engine |
+| Analysis | OpenRouter / OpenAI over plain REST via httpx (optional) · custom local skill-matching engine |
 | Résumé in | PyMuPDF (PDF) · python-docx (.docx) · olefile (legacy .doc, best-effort) |
 | PDF out | ReportLab (Platypus) |
 | Frontend | Hand-written HTML/CSS/JS, Fraunces + Hanken Grotesk, no framework |
@@ -109,7 +109,7 @@ redeploy:
 
 ```bash
 npx vercel env add OPENROUTER_API_KEY production   # paste your sk-or-... key
-npx vercel env add OPENAI_MODEL production          # e.g. openai/gpt-oss-120b:free
+npx vercel env add OPENAI_MODEL production          # e.g. meta-llama/llama-3.3-70b-instruct:free
 npx vercel --prod
 ```
 
@@ -132,7 +132,7 @@ app.py                 # Flask routes, upload handling, PRG flow, record store
 utils/
   parser.py            # PDF/.doc/.docx -> text (PyMuPDF + python-docx + olefile)
   matcher.py           # Local skill-extraction + scoring engine (tested)
-  analysis.py          # Orchestration: OpenAI with local fallback (tested)
+  analysis.py          # Orchestration: LLM REST calls with local fallback (tested)
   pdf_exporter.py      # Styled PDF reports & cover letters (ReportLab)
 templates/             # base + index + result + cover_letter (Jinja)
 static/style.css       # "Precision instrument" theme

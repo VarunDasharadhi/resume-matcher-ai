@@ -5,15 +5,14 @@ score, matching/missing skills, tailored suggestions, a downloadable PDF
 report, and an AI-generated cover letter. Works with an OpenRouter or OpenAI
 API key (richer output) or fully offline via a built-in local analysis engine.
 
-The app is fully stateless: nothing is written to a database or persisted on
-disk between requests. Uploaded files are read into a temp file only long
-enough to extract text, and everything needed for later steps (cover letter,
-PDF downloads) is carried through the page via POST form fields. This makes it
-safe to run anywhere, including serverless platforms like Vercel.
+The app is fully stateless: nothing is written to a database or disk, ever.
+Uploaded files are parsed entirely in memory, and everything needed for later
+steps (cover letter, PDF downloads) is carried through the page via POST form
+fields. This makes it safe to run anywhere, including serverless platforms
+like Vercel.
 """
 import json
 import os
-import tempfile
 from io import BytesIO
 
 from dotenv import load_dotenv
@@ -33,7 +32,7 @@ from utils.analysis import (
     generate_cover_letter,
     provider_label,
 )
-from utils.parser import extract_text, is_supported
+from utils.parser import extract_text_from_bytes, is_supported
 from utils.pdf_exporter import export_analysis_to_pdf, export_cover_letter_to_pdf
 
 load_dotenv()
@@ -51,8 +50,13 @@ def inject_globals():
     return {"ai_available": ai_available(), "provider_label": provider_label()}
 
 
-def _ext(filename: str) -> str:
-    return os.path.splitext(filename or "")[1].lower()
+def _carried_analysis():
+    """Parse the analysis dict carried between pages; ``None`` if corrupted."""
+    try:
+        data = json.loads(request.form.get("analysis") or "{}")
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 # --------------------------------------------------------------------------- #
@@ -81,23 +85,15 @@ def analyze():
         flash("Please paste the job description so we have something to match against.")
         return redirect(url_for("index"))
 
-    # Read the upload into a temp file just long enough to extract its text.
-    fd, tmp_path = tempfile.mkstemp(suffix=_ext(resume_file.filename))
-    os.close(fd)
+    # Parse the upload entirely in memory; nothing ever touches disk.
     try:
-        resume_file.save(tmp_path)
-        resume_text = extract_text(tmp_path)
+        resume_text = extract_text_from_bytes(resume_file.read(), resume_file.filename)
     except Exception:
         flash(
             "We had trouble reading that file. If it's an older .doc, try saving "
             "it as a PDF or .docx in Word (File, Save As) and upload that."
         )
         return redirect(url_for("index"))
-    finally:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
 
     if not resume_text or not resume_text.strip():
         flash(
@@ -113,7 +109,10 @@ def analyze():
 @app.route("/result", methods=["POST"])
 def result():
     """Re-render the report from carried data (used by 'back to report')."""
-    analysis = json.loads(request.form.get("analysis") or "{}")
+    analysis = _carried_analysis()
+    if analysis is None:
+        flash("That report data was corrupted. Please run the analysis again.")
+        return redirect(url_for("index"))
     return _render_result(
         analysis,
         request.form.get("resume_text", ""),
@@ -148,7 +147,10 @@ def cover_letter():
 
 @app.route("/download/report", methods=["POST"])
 def download_report():
-    analysis = json.loads(request.form.get("analysis") or "{}")
+    analysis = _carried_analysis()
+    if analysis is None:
+        flash("That report data was corrupted. Please run the analysis again.")
+        return redirect(url_for("index"))
     pdf = export_analysis_to_pdf(analysis)
     return send_file(
         BytesIO(pdf), as_attachment=True,
@@ -179,4 +181,6 @@ def too_large(_e):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # Local dev entrypoint (production uses gunicorn/Vercel). FLASK_DEBUG=0
+    # turns the debugger off if this script is ever run on a shared host.
+    app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG", "1") == "1")

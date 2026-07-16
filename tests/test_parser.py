@@ -138,3 +138,57 @@ def test_extract_text_unsupported_type_raises(tmp_path):
     bad.write_text("hello world")
     with pytest.raises(ValueError):
         extract_text(str(bad))
+
+
+# --------------------------------------------------------------------------- #
+# In-memory extraction (no temp files, serverless-friendly)
+# --------------------------------------------------------------------------- #
+def test_extract_text_from_bytes_pdf(tmp_path):
+    from utils.parser import extract_text_from_bytes
+    pdf = tmp_path / "r.pdf"
+    _make_pdf(pdf, "Python developer with Django")
+    text = extract_text_from_bytes(pdf.read_bytes(), "resume.pdf")
+    assert "Python developer with Django" in text
+
+
+def test_extract_text_from_bytes_docx(tmp_path):
+    from utils.parser import extract_text_from_bytes
+    docx_path = tmp_path / "r.docx"
+    _make_docx(docx_path, ["Jane Doe", "Skilled in Python, Flask and AWS."])
+    text = extract_text_from_bytes(docx_path.read_bytes(), "resume.docx")
+    assert "Jane Doe" in text
+    assert "Flask" in text
+
+
+def test_extract_text_from_bytes_doc(monkeypatch):
+    from types import SimpleNamespace
+    import utils.parser as parser
+
+    text = (
+        "Senior Python developer skilled in Django, Flask, AWS, Docker, "
+        "PostgreSQL, Git and REST APIs, with five years building scalable "
+        "backend services and Kubernetes deployments."
+    )
+    raw = text.encode("utf-16-le")
+
+    class FakeOle:
+        def exists(self, name):
+            return name == "WordDocument"
+
+        def openstream(self, name):
+            return SimpleNamespace(read=lambda: raw)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(parser.olefile, "isOleFile", lambda src: True)
+    monkeypatch.setattr(parser.olefile, "OleFileIO", lambda src: FakeOle())
+
+    out = parser.extract_text_from_bytes(b"fake-ole-bytes", "resume.doc")
+    assert "Python" in out and "Django" in out
+
+
+def test_extract_text_from_bytes_unsupported_raises():
+    from utils.parser import extract_text_from_bytes
+    with pytest.raises(ValueError):
+        extract_text_from_bytes(b"hello", "resume.txt")

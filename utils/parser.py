@@ -8,6 +8,7 @@ can ask the user to upload a PDF or .docx instead.
 """
 import os
 import re
+from io import BytesIO
 
 import fitz  # PyMuPDF
 import olefile
@@ -31,13 +32,16 @@ def is_supported(filename: str) -> bool:
     return _ext(filename or "") in SUPPORTED_EXTENSIONS
 
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    doc = fitz.open(pdf_path)
-    text = ""
-    for page in doc:
-        text += page.get_text()
-    doc.close()
-    return text
+def extract_text_from_pdf(source) -> str:
+    """Extract text from a PDF given a filesystem path or raw bytes."""
+    if isinstance(source, (bytes, bytearray)):
+        doc = fitz.open(stream=source, filetype="pdf")
+    else:
+        doc = fitz.open(source)
+    try:
+        return "".join(page.get_text() for page in doc)
+    finally:
+        doc.close()
 
 
 def extract_text_from_docx(docx_path: str) -> str:
@@ -79,11 +83,13 @@ def _decode_doc_bytes(data: bytes) -> str:
     return best
 
 
-def extract_text_from_doc(doc_path: str) -> str:
-    """Best-effort text extraction from a legacy ``.doc`` file."""
-    if not olefile.isOleFile(doc_path):
+def extract_text_from_doc(source) -> str:
+    """Best-effort text extraction from a legacy ``.doc`` (path or file-like)."""
+    if not olefile.isOleFile(source):
         raise ValueError("Not a valid .doc file")
-    ole = olefile.OleFileIO(doc_path)
+    if hasattr(source, "seek"):
+        source.seek(0)  # isOleFile consumed the header
+    ole = olefile.OleFileIO(source)
     try:
         if not ole.exists("WordDocument"):
             raise ValueError("No WordDocument stream in .doc")
@@ -97,16 +103,27 @@ def extract_text_from_doc(doc_path: str) -> str:
     return text
 
 
+def extract_text_from_bytes(data: bytes, filename: str) -> str:
+    """Extract text from an in-memory document, dispatching by extension.
+
+    Nothing touches disk, which keeps the request path fast and fully
+    stateless. Raises ``ValueError`` for unsupported file types.
+    """
+    ext = _ext(filename)
+    if ext == ".pdf":
+        return extract_text_from_pdf(data)
+    if ext == ".docx":
+        return extract_text_from_docx(BytesIO(data))
+    if ext == ".doc":
+        return extract_text_from_doc(BytesIO(data))
+    raise ValueError(f"Unsupported file type: {ext or '(none)'}")
+
+
 def extract_text(path: str) -> str:
-    """Extract text from a supported document, dispatching by extension.
+    """Extract text from a supported document on disk.
 
     Raises ``ValueError`` for unsupported file types.
     """
-    ext = _ext(path)
-    if ext == ".pdf":
-        return extract_text_from_pdf(path)
-    if ext == ".docx":
-        return extract_text_from_docx(path)
-    if ext == ".doc":
-        return extract_text_from_doc(path)
-    raise ValueError(f"Unsupported file type: {ext or '(none)'}")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    return extract_text_from_bytes(data, path)

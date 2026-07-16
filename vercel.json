@@ -7,9 +7,14 @@
       "config": {
         "includeFiles": ["templates/**", "static/**", "utils/**"]
       }
+    },
+    {
+      "src": "static/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
+    { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "app.py" }
   ]
 }
