@@ -52,7 +52,23 @@
     <span>Built with Flask · {{ provider_label }} · ReportLab</span>
     <span class="foot-sep">·</span>
     <a href="https://github.com/VarunDasharadhi/resume-matcher-ai" target="_blank" rel="noopener">Source</a>
+    <span class="foot-sep">·</span>
+    <button type="button" class="footer-link" id="contact-btn">Contact</button>
   </footer>
+
+  <div class="modal-overlay" id="contact-overlay">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="contact-close" aria-label="Close">✕</button>
+      <div class="modal-icon">✉</div>
+      <h3 class="modal-title">Get in touch</h3>
+      <p class="modal-body">Found a bug, have feedback, or want to report an issue? Reach out anytime.</p>
+      <button type="button" class="modal-copy" id="contact-copy">
+        <span id="contact-email-text">{{ contact_email }}</span>
+        <span class="modal-copy-icon" aria-hidden="true">⧉</span>
+      </button>
+      <p class="modal-copy-hint" id="contact-copy-hint">Tap to copy the email address</p>
+    </div>
+  </div>
 
   {% block scripts %}{% endblock %}
 

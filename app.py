@@ -38,6 +38,7 @@ from utils.pdf_exporter import export_analysis_to_pdf, export_cover_letter_to_pd
 load_dotenv()
 
 MAX_CONTENT_LENGTH = 4 * 1024 * 1024  # 4 MB (within serverless body limits)
+CONTACT_EMAIL = "developerworld.net@gmail.com"
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-only-change-in-production")
@@ -46,8 +47,12 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 @app.context_processor
 def inject_globals():
-    """Make AI availability known to every template (header/footer status)."""
-    return {"ai_available": ai_available(), "provider_label": provider_label()}
+    """Make AI availability and contact info known to every template."""
+    return {
+        "ai_available": ai_available(),
+        "provider_label": provider_label(),
+        "contact_email": CONTACT_EMAIL,
+    }
 
 
 def _carried_analysis():

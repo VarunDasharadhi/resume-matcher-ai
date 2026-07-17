@@ -34,6 +34,11 @@ def test_index_loads(client):
     assert b"AI Resume Matcher" in resp.data or b"R\xc3\xa9sum\xc3\xa9Match" in resp.data
 
 
+def test_index_shows_contact_email(client):
+    resp = client.get("/")
+    assert b"developerworld.net@gmail.com" in resp.data
+
+
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
