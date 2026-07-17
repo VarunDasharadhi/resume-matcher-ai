@@ -100,6 +100,51 @@ body {
 .site-foot a:hover { color: var(--amber); }
 .foot-sep { opacity: .5; }
 
+/* ---- footer link + contact modal ---- */
+.footer-link {
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  font-family: var(--mono); font-size: .72rem;
+  color: var(--cream-dim); border-bottom: 1px solid var(--line);
+}
+.footer-link:hover { color: var(--amber); }
+
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 50;
+  align-items: center; justify-content: center; padding: 20px;
+  background: rgba(20,17,15,.7); backdrop-filter: blur(6px);
+}
+.modal-overlay.is-open { display: flex; }
+.modal-card {
+  position: relative; width: 100%; max-width: 340px; text-align: center;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 30px 26px 26px;
+}
+.modal-close {
+  position: absolute; top: 14px; right: 14px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  width: 30px; height: 30px; border-radius: 50%;
+  color: var(--cream-dim); cursor: pointer; font-size: .8rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { color: var(--amber); border-color: var(--amber); }
+.modal-icon {
+  width: 46px; height: 46px; margin: 0 auto 16px;
+  border-radius: 50%; background: rgba(224,168,61,.12); color: var(--amber);
+  display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+}
+.modal-title { font-family: var(--serif); font-size: 1.2rem; margin: 0 0 8px; color: var(--cream); }
+.modal-body { font-size: .88rem; color: var(--cream-dim); line-height: 1.5; margin: 0 0 20px; }
+.modal-copy {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 12px 14px; cursor: pointer;
+  font-family: var(--mono); font-size: .82rem; color: var(--cream);
+}
+.modal-copy:hover { border-color: var(--amber); }
+.modal-copy-icon { color: var(--muted); }
+.modal-copy-hint { font-size: .76rem; color: var(--muted); margin: 10px 0 0; }
+
 /* ---- flash ---- */
 .flash-stack { max-width: var(--maxw); margin: 18px auto 0; padding: 0 28px; position: relative; z-index: 2; }
 .flash {

@@ -73,6 +73,38 @@
   {% block scripts %}{% endblock %}
 
   <script>
+    const contactBtn = document.getElementById('contact-btn');
+    const contactOverlay = document.getElementById('contact-overlay');
+    const contactClose = document.getElementById('contact-close');
+    const contactCopy = document.getElementById('contact-copy');
+    const contactEmailText = document.getElementById('contact-email-text');
+    const contactHint = document.getElementById('contact-copy-hint');
+    const contactHintDefault = contactHint.textContent;
+
+    function openContact() { contactOverlay.classList.add('is-open'); }
+    function closeContact() { contactOverlay.classList.remove('is-open'); }
+
+    contactBtn.addEventListener('click', openContact);
+    contactClose.addEventListener('click', closeContact);
+    contactOverlay.addEventListener('click', e => {
+      if (e.target === contactOverlay) closeContact();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && contactOverlay.classList.contains('is-open')) closeContact();
+    });
+
+    contactCopy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(contactEmailText.textContent);
+        contactHint.textContent = 'Copied to clipboard';
+        setTimeout(() => { contactHint.textContent = contactHintDefault; }, 1800);
+      } catch (e) {
+        contactHint.textContent = 'Press Ctrl+C';
+      }
+    });
+  </script>
+
+  <script>
     // Shared click feedback: within an [data-action-group], clicking one action
     // marks it active and dims the siblings so it's clear what was clicked and
     // users don't double-trigger. Transient actions (downloads, plain buttons)
