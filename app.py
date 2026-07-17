@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from flask import (
     Flask,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -32,6 +33,7 @@ from utils.analysis import (
     generate_cover_letter,
     provider_label,
 )
+from utils.matcher import analyze_match
 from utils.parser import extract_text_from_bytes, is_supported
 from utils.pdf_exporter import export_analysis_to_pdf, export_cover_letter_to_pdf
 
@@ -176,6 +178,29 @@ def download_cover_letter():
 @app.route("/health", methods=["GET"])
 def health():
     return {"status": "ok", "ai": ai_available()}
+
+
+@app.route("/api/match", methods=["POST"])
+def api_match():
+    """JSON scoring endpoint for programmatic callers (no file upload).
+
+    Body: {"resume_text": str, "job_description": str}. Gated by the
+    MATCH_API_KEY env var when set (via the X-API-Key header); open when unset.
+    """
+    required_key = os.getenv("MATCH_API_KEY", "")
+    if required_key and request.headers.get("X-API-Key") != required_key:
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    resume_text = (data.get("resume_text") or "").strip()
+    job_description = (data.get("job_description") or "").strip()
+
+    if not resume_text:
+        return jsonify({"error": "resume_text is required"}), 400
+    if not job_description:
+        return jsonify({"error": "job_description is required"}), 400
+
+    return jsonify(analyze_match(resume_text, job_description))
 
 
 @app.errorhandler(413)

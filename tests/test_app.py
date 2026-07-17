@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 import app as app_module
+from utils.matcher import analyze_match
 
 
 @pytest.fixture
@@ -144,3 +145,74 @@ def test_download_cover_letter_returns_pdf(client):
     assert resp.status_code == 200
     assert resp.mimetype == "application/pdf"
     assert resp.data[:5] == b"%PDF-"
+
+
+def test_api_match_happy_path(client):
+    resume_text = "Python developer with Django, Flask, AWS, Git and PostgreSQL"
+    job_description = "Need Python, Django, AWS, Docker and Kubernetes"
+    resp = client.post(
+        "/api/match",
+        json={"resume_text": resume_text, "job_description": job_description},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == analyze_match(resume_text, job_description)
+
+
+def test_api_match_missing_resume_text_400(client):
+    resp = client.post("/api/match", json={"job_description": "Need Python"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_api_match_missing_job_description_400(client):
+    resp = client.post("/api/match", json={"resume_text": "Python developer"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_api_match_empty_fields_400(client):
+    resp = client.post(
+        "/api/match", json={"resume_text": "  ", "job_description": " "}
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+
+def test_api_match_requires_api_key_when_set(client, monkeypatch):
+    monkeypatch.setenv("MATCH_API_KEY", "secret-key")
+    resp = client.post(
+        "/api/match",
+        json={"resume_text": "Python developer", "job_description": "Need Python"},
+    )
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": "unauthorized"}
+
+
+def test_api_match_rejects_wrong_api_key(client, monkeypatch):
+    monkeypatch.setenv("MATCH_API_KEY", "secret-key")
+    resp = client.post(
+        "/api/match",
+        json={"resume_text": "Python developer", "job_description": "Need Python"},
+        headers={"X-API-Key": "wrong-key"},
+    )
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": "unauthorized"}
+
+
+def test_api_match_accepts_correct_api_key(client, monkeypatch):
+    monkeypatch.setenv("MATCH_API_KEY", "secret-key")
+    resp = client.post(
+        "/api/match",
+        json={"resume_text": "Python developer", "job_description": "Need Python"},
+        headers={"X-API-Key": "secret-key"},
+    )
+    assert resp.status_code == 200
+
+
+def test_api_match_open_when_no_api_key_configured(client, monkeypatch):
+    monkeypatch.delenv("MATCH_API_KEY", raising=False)
+    resp = client.post(
+        "/api/match",
+        json={"resume_text": "Python developer", "job_description": "Need Python"},
+    )
+    assert resp.status_code == 200
