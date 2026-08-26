@@ -185,6 +185,7 @@ def download_cover_letter():
 def cv_generator():
     resume_text = (request.form.get("resume_text") or "").strip()
     job_description = (request.form.get("job_description") or "").strip()
+    analysis_json = request.form.get("analysis", "{}")
     if not resume_text or not job_description:
         flash("That session data was lost. Please run the analysis again.")
         return redirect(url_for("index"))
@@ -198,6 +199,7 @@ def cv_generator():
         attempts=result["attempts"],
         resume_text=resume_text,
         job_description=job_description,
+        analysis_json=analysis_json,
     )
 
 
@@ -209,7 +211,10 @@ def cv_rescore():
         return redirect(url_for("index"))
 
     cv_text = request.form.get("cv_text") or ""
+    # resume_text is carried for the back-link only, not scored: score_ats
+    # only needs cv_text and job_description.
     resume_text = request.form.get("resume_text") or ""
+    analysis_json = request.form.get("analysis", "{}")
     ats = score_ats(cv_text, job_description)
     return render_template(
         "cv.html",
@@ -219,6 +224,7 @@ def cv_rescore():
         attempts=None,
         resume_text=resume_text,
         job_description=job_description,
+        analysis_json=analysis_json,
     )
 
 

@@ -2,7 +2,9 @@
 
 Each test forces local-engine mode (no API keys) so nothing hits the network.
 """
+import html
 import json
+import re
 from io import BytesIO
 
 import pytest
@@ -264,3 +266,64 @@ def test_download_cv_returns_pdf(client):
     assert resp.status_code == 200
     assert resp.mimetype == "application/pdf"
     assert resp.data[:5] == b"%PDF-"
+
+
+def _extract_analysis_attr(html_bytes, marker):
+    """Pull the ``analysis`` hidden-field value out of a form's HTML block.
+
+    Jinja HTML-escapes the JSON when it writes the attribute (quotes become
+    ``&#34;`` etc.), same as any real browser would render it; unescape here
+    so the extracted value matches what a browser actually submits on the
+    next form post, not the raw escaped markup.
+    """
+    m = re.search(
+        marker + rb'.*?name="analysis" value="([^"]*)"',
+        html_bytes, re.DOTALL,
+    )
+    assert m, f"analysis hidden field not found near {marker!r}"
+    return html.unescape(m.group(1).decode("utf-8")).encode("utf-8")
+
+
+def test_cv_generator_preserves_analysis_for_back_link(client):
+    resume_text = "Python developer with Django, Flask, AWS, Git and PostgreSQL"
+    job_description = "Need Python, Django, AWS, Docker and Kubernetes"
+    pdf = _pdf_bytes(resume_text)
+    analyze_resp = client.post("/analyze", data={
+        "job_description": job_description,
+        "resume": (BytesIO(pdf), "resume.pdf"),
+    }, content_type="multipart/form-data")
+    assert analyze_resp.status_code == 200
+
+    analysis_json = _extract_analysis_attr(analyze_resp.data, rb'id="cv-form-launch"')
+    assert analysis_json != b"{}"
+
+    cv_resp = client.post("/cv", data={
+        "resume_text": resume_text,
+        "job_description": job_description,
+        "analysis": analysis_json,
+    })
+    assert cv_resp.status_code == 200
+
+    carried_analysis = _extract_analysis_attr(cv_resp.data, rb'class="back-form"')
+    assert carried_analysis == analysis_json, "analysis JSON was not carried through /cv"
+
+    back_resp = client.post("/result", data={
+        "analysis": carried_analysis,
+        "resume_text": resume_text,
+        "job_description": job_description,
+    })
+    assert back_resp.status_code == 200
+    assert b"Kubernetes" in back_resp.data
+    assert b"No overlapping skills detected." not in back_resp.data
+
+
+def test_cv_rescore_preserves_analysis_for_back_link(client):
+    resp = client.post("/cv/rescore", data={
+        "cv_text": "SKILLS\nPython, Django, AWS, Docker",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+        "resume_text": "Python developer with Django, AWS and Docker experience.",
+        "analysis": '{"score": 77, "summary": "Solid fit."}',
+    })
+    assert resp.status_code == 200
+    carried_analysis = _extract_analysis_attr(resp.data, rb'class="back-form"')
+    assert b"77" in carried_analysis

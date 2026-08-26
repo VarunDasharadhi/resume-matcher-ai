@@ -312,6 +312,17 @@ def test_generate_ats_cv_local_adds_skills_section_when_missing(monkeypatch):
     assert "Python" in result["cv_text"]
 
 
+def test_local_cv_rewrite_never_injects_match_report_verdict(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = analysis.generate_ats_cv(
+        "Built services with Python and Django.",
+        "Need Python and Django.",
+    )
+    assert "match" not in result["cv_text"].lower()
+    assert "SUMMARY" not in result["cv_text"]
+
+
 def test_generate_ats_cv_ai_succeeds_first_pass(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     good_cv = (

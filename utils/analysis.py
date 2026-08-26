@@ -286,23 +286,18 @@ def _local_cv_rewrite(resume_text: str, job_description: str) -> str:
 
     Never invents content: only surfaces skills already present in the
     resume (via ``analyze_match``) into a SKILLS section when one isn't
-    already there, and adds a factual SUMMARY when one is missing. The
-    rest of the resume text is left unchanged.
+    already there. The rest of the resume text is left unchanged.
     """
     resume_text = resume_text or ""
     found = set(score_ats(resume_text, job_description)["sections"]["found"])
-
-    prefix_parts: List[str] = []
-    if "Skills" not in found:
-        matched = analyze_match(resume_text, job_description)["matching_skills"]
-        if matched:
-            prefix_parts.append("SKILLS\n" + ", ".join(matched))
-    if "Summary" not in found:
-        prefix_parts.append("SUMMARY\n" + _local_summary(analyze_match(resume_text, job_description)))
-
-    if not prefix_parts:
+    if "Skills" in found:
         return resume_text
-    return "\n\n".join(prefix_parts) + "\n\n" + resume_text
+
+    matched = analyze_match(resume_text, job_description)["matching_skills"]
+    if not matched:
+        return resume_text
+
+    return "SKILLS\n" + ", ".join(matched) + "\n\n" + resume_text
 
 
 # --------------------------------------------------------------------------- #

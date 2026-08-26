@@ -14,7 +14,7 @@
   <form method="post" action="{{ url_for('result') }}" class="back-form">
     <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
     <textarea name="job_description" hidden>{{ job_description }}</textarea>
-    <input type="hidden" name="analysis" value="{}">
+    <input type="hidden" name="analysis" value="{{ analysis_json }}">
     <button type="submit" class="back-link back-link--btn">← Back to report</button>
   </form>
 </section>
@@ -59,7 +59,8 @@
     <textarea name="cv_text" id="cv-textarea" class="cv-textarea" spellcheck="false">{{ cv_text }}</textarea>
     <textarea name="job_description" hidden>{{ job_description }}</textarea>
     <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
-    <div class="cv-editor-actions">
+    <input type="hidden" name="analysis" value="{{ analysis_json }}">
+    <div class="cv-editor-actions" data-action-group>
       <button type="submit" class="cta cta-ghost" id="rescore-btn">
         <span class="cta-label">↻ Re-check ATS score</span>
         <span class="cta-spinner" aria-hidden="true"></span>

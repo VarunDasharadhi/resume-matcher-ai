@@ -11,7 +11,6 @@ from io import BytesIO
 from typing import Dict, List
 
 from reportlab.lib import colors
-from utils.ats_scorer import is_section_header
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -24,6 +23,8 @@ from reportlab.platypus import (
     SimpleDocTemplate,
     Spacer,
 )
+
+from utils.ats_scorer import is_section_header
 
 INK = colors.HexColor("#1c1917")
 MUTED = colors.HexColor("#78716c")
