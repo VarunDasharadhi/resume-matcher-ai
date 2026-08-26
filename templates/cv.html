@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Tailored CV | AI Resume Matcher{% endblock %}
+
+{% block content %}
+<section class="result-head">
+  <p class="eyebrow">
+    <span class="eyebrow-num">06</span> / Tailored CV
+    {% if source %}
+    <span class="src-tag {% if source == 'ai' %}src-ai{% endif %}">
+      {% if source == 'ai' %}AI, {{ attempts }} pass{{ 'es' if attempts != 1 else '' }}{% else %}Local engine{% endif %}
+    </span>
+    {% endif %}
+  </p>
+  <form method="post" action="{{ url_for('result') }}" class="back-form">
+    <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
+    <textarea name="job_description" hidden>{{ job_description }}</textarea>
+    <input type="hidden" name="analysis" value="{}">
+    <button type="submit" class="back-link back-link--btn">← Back to report</button>
+  </form>
+</section>
+
+<section class="score-block">
+  <div class="gauge" data-score="{{ ats.score }}">
+    <svg viewBox="0 0 200 200" class="gauge-svg" aria-hidden="true">
+      <circle class="gauge-track" cx="100" cy="100" r="86"></circle>
+      <circle class="gauge-fill" cx="100" cy="100" r="86"></circle>
+    </svg>
+    <div class="gauge-center">
+      <span class="gauge-num" id="ats-gauge-num">0</span>
+      <span class="gauge-unit">/100</span>
+    </div>
+  </div>
+  <div class="score-copy">
+    <h1 class="score-verdict" id="ats-verdict">ATS score</h1>
+    <p class="score-summary">
+      {% if ats.score >= 90 %}Ready to submit. This CV clears a 90+ ATS screen.
+      {% elif ats.score >= 70 %}Close. Edit below to close the remaining gaps.
+      {% else %}Needs work. Edit below, then re-check the score.
+      {% endif %}
+    </p>
+    <ul class="ats-breakdown">
+      <li class="ats-row"><span>Keyword coverage</span><strong>{{ ats.coverage.score }}/50</strong></li>
+      <li class="ats-row"><span>Standard sections</span><strong>{{ ats.sections.score }}/20</strong></li>
+      <li class="ats-row"><span>Contact info</span><strong>{{ ats.contact_info.score }}/10</strong></li>
+      <li class="ats-row"><span>Quantified achievements</span><strong>{{ ats.quantified_achievements.score }}/10</strong></li>
+      <li class="ats-row"><span>Keyword placement</span><strong>{{ ats.keyword_placement.score }}/10</strong></li>
+    </ul>
+    {% if ats.coverage.missing_skills %}
+    <p class="ats-hint">Still missing: {{ ats.coverage.missing_skills | join(', ') }}</p>
+    {% endif %}
+    {% if ats.sections.missing %}
+    <p class="ats-hint">Missing sections: {{ ats.sections.missing | join(', ') }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="cv-editor">
+  <form method="post" action="{{ url_for('cv_rescore') }}" id="cv-form">
+    <textarea name="cv_text" id="cv-textarea" class="cv-textarea" spellcheck="false">{{ cv_text }}</textarea>
+    <textarea name="job_description" hidden>{{ job_description }}</textarea>
+    <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
+    <div class="cv-editor-actions">
+      <button type="submit" class="cta cta-ghost" id="rescore-btn">
+        <span class="cta-label">↻ Re-check ATS score</span>
+        <span class="cta-spinner" aria-hidden="true"></span>
+      </button>
+      <button type="submit" form="download-cv-form" class="cta cta-amber" id="download-cv-btn">⬇ Download PDF</button>
+    </div>
+  </form>
+  <form method="post" action="{{ url_for('download_cv') }}" id="download-cv-form" hidden>
+    <textarea name="cv_text" id="download-cv-text"></textarea>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const gauge = document.querySelector('.gauge');
+    const fill = document.querySelector('.gauge-fill');
+    const numEl = document.getElementById('ats-gauge-num');
+    const verdict = document.getElementById('ats-verdict');
+    const score = parseInt(gauge.dataset.score, 10) || 0;
+
+    const r = 86, circ = 2 * Math.PI * r;
+    fill.style.strokeDasharray = circ;
+    fill.style.strokeDashoffset = circ;
+
+    let hue = '#e0533a';
+    if (score >= 90) hue = '#7fb069';
+    else if (score >= 70) hue = '#e0a83d';
+    fill.style.stroke = hue;
+    numEl.style.color = hue;
+    verdict.textContent = score >= 90 ? 'Strong ATS score'
+      : score >= 70 ? 'Close to ready' : 'Needs work';
+
+    requestAnimationFrame(() => {
+      fill.style.strokeDashoffset = circ * (1 - score / 100);
+    });
+
+    const dur = 900, start = performance.now();
+    function tick(now) {
+      const p = Math.min((now - start) / dur, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      numEl.textContent = Math.round(eased * score);
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    document.getElementById('cv-form').addEventListener('submit', () => {
+      const btn = document.getElementById('rescore-btn');
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+    });
+
+    document.getElementById('download-cv-btn').addEventListener('click', () => {
+      document.getElementById('download-cv-text').value =
+        document.getElementById('cv-textarea').value;
+    });
+  })();
+</script>
+{% endblock %}

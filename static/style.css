@@ -462,3 +462,27 @@ textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3p
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* --- ATS CV generator --- */
+.ats-breakdown {
+  list-style: none; margin: 18px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ats-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--mono); font-size: .78rem; color: var(--cream-dim);
+  padding: 8px 12px; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.ats-row strong { color: var(--cream); font-weight: 600; }
+.ats-hint { font-size: .85rem; color: var(--muted); margin: 10px 0 0; }
+
+.cv-editor { margin-top: 34px; }
+.cv-textarea {
+  width: 100%; min-height: 480px; resize: vertical;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--cream); font-family: var(--mono); font-size: .88rem; line-height: 1.6;
+  padding: 22px; box-sizing: border-box;
+}
+.cv-textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(224,168,61,.15); }
+.cv-editor-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }

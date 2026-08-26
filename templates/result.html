@@ -40,6 +40,14 @@
         <input type="hidden" name="analysis" value="{{ analysis_json }}">
         <button type="submit" class="cta cta-ghost">⬇ Download report PDF</button>
       </form>
+      <form method="post" action="{{ url_for('cv_generator') }}" id="cv-form-launch">
+        <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
+        <textarea name="job_description" hidden>{{ job_description }}</textarea>
+        <button type="submit" class="cta cta-ghost" id="cv-btn">
+          <span class="cta-label">📄 Generate ATS CV</span>
+          <span class="cta-spinner" aria-hidden="true"></span>
+        </button>
+      </form>
     </div>
   </div>
 </section>
@@ -120,6 +128,15 @@
     if (clForm) {
       clForm.addEventListener('submit', () => {
         const btn = document.getElementById('cl-btn');
+        btn.classList.add('is-loading');
+        btn.disabled = true;
+      });
+    }
+
+    const cvForm = document.getElementById('cv-form-launch');
+    if (cvForm) {
+      cvForm.addEventListener('submit', () => {
+        const btn = document.getElementById('cv-btn');
         btn.classList.add('is-loading');
         btn.disabled = true;
       });

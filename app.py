@@ -30,12 +30,18 @@ from flask import (
 from utils.analysis import (
     ai_available,
     analyze_resume,
+    generate_ats_cv,
     generate_cover_letter,
     provider_label,
 )
+from utils.ats_scorer import score_ats
 from utils.matcher import analyze_match
 from utils.parser import extract_text_from_bytes, is_supported
-from utils.pdf_exporter import export_analysis_to_pdf, export_cover_letter_to_pdf
+from utils.pdf_exporter import (
+    export_analysis_to_pdf,
+    export_cover_letter_to_pdf,
+    export_cv_to_pdf,
+)
 
 load_dotenv()
 
@@ -172,6 +178,57 @@ def download_cover_letter():
     return send_file(
         BytesIO(pdf), as_attachment=True,
         download_name="cover_letter.pdf", mimetype="application/pdf",
+    )
+
+
+@app.route("/cv", methods=["POST"])
+def cv_generator():
+    resume_text = (request.form.get("resume_text") or "").strip()
+    job_description = (request.form.get("job_description") or "").strip()
+    if not resume_text or not job_description:
+        flash("That session data was lost. Please run the analysis again.")
+        return redirect(url_for("index"))
+
+    result = generate_ats_cv(resume_text, job_description)
+    return render_template(
+        "cv.html",
+        cv_text=result["cv_text"],
+        ats=result["ats"],
+        source=result["source"],
+        attempts=result["attempts"],
+        resume_text=resume_text,
+        job_description=job_description,
+    )
+
+
+@app.route("/cv/rescore", methods=["POST"])
+def cv_rescore():
+    job_description = (request.form.get("job_description") or "").strip()
+    if not job_description:
+        flash("That session data was lost. Please run the analysis again.")
+        return redirect(url_for("index"))
+
+    cv_text = request.form.get("cv_text") or ""
+    resume_text = request.form.get("resume_text") or ""
+    ats = score_ats(cv_text, job_description)
+    return render_template(
+        "cv.html",
+        cv_text=cv_text,
+        ats=ats,
+        source=None,
+        attempts=None,
+        resume_text=resume_text,
+        job_description=job_description,
+    )
+
+
+@app.route("/download/cv", methods=["POST"])
+def download_cv():
+    cv_text = request.form.get("cv_text") or ""
+    pdf = export_cv_to_pdf(cv_text)
+    return send_file(
+        BytesIO(pdf), as_attachment=True,
+        download_name="tailored_cv.pdf", mimetype="application/pdf",
     )
 
 

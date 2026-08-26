@@ -216,3 +216,51 @@ def test_api_match_open_when_no_api_key_configured(client, monkeypatch):
         json={"resume_text": "Python developer", "job_description": "Need Python"},
     )
     assert resp.status_code == 200
+
+
+def test_result_page_shows_generate_cv_button(client):
+    pdf = _pdf_bytes("Python developer with Django, Flask, AWS, Git and PostgreSQL")
+    data = {
+        "job_description": "Need Python, Django, AWS, Docker and Kubernetes",
+        "resume": (BytesIO(pdf), "resume.pdf"),
+    }
+    resp = client.post("/analyze", data=data, content_type="multipart/form-data")
+    assert b"Generate ATS CV" in resp.data
+
+
+def test_cv_generator_local_engine_renders(client):
+    resp = client.post("/cv", data={
+        "resume_text": "Python developer with Django, AWS, Docker and Git experience.",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+    })
+    assert resp.status_code == 200
+    assert b"Tailored CV" in resp.data
+    assert b"Re-check ATS score" in resp.data
+    assert b'name="cv_text"' in resp.data
+
+
+def test_cv_generator_missing_fields_redirects(client):
+    resp = client.post("/cv", data={"resume_text": "", "job_description": ""})
+    assert resp.status_code == 302
+
+
+def test_cv_rescore_preserves_edited_text_and_rescoring(client):
+    resp = client.post("/cv/rescore", data={
+        "cv_text": "MY CUSTOM EDIT\n\nSKILLS\nPython, Django, AWS, Docker",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+        "resume_text": "Python developer with Django, AWS and Docker experience.",
+    })
+    assert resp.status_code == 200
+    assert b"MY CUSTOM EDIT" in resp.data
+
+
+def test_cv_rescore_missing_job_description_redirects(client):
+    resp = client.post("/cv/rescore", data={"cv_text": "hello", "job_description": ""})
+    assert resp.status_code == 302
+
+
+def test_download_cv_returns_pdf(client):
+    resp = client.post("/download/cv", data={"cv_text": "SUMMARY\nA great candidate."})
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/pdf"
+    assert resp.data[:5] == b"%PDF-"
