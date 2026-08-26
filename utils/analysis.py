@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from utils.ats_scorer import score_ats
 from utils.matcher import analyze_match, extract_skills
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,167 @@ def generate_cover_letter(resume_text: str, job_description: str) -> str:
         except Exception as exc:
             logger.warning("AI cover letter failed, falling back to local: %s", exc)
     return _strip_dashes(_cover_letter_local(resume_text, job_description))
+
+
+def generate_ats_cv(resume_text: str, job_description: str) -> Dict:
+    """Generate a tailored, ATS-optimized CV for a job description.
+
+    AI path (when configured): one pass, scored; if under 90, one
+    refinement pass fed the specific gaps from the first score, keeping
+    whichever attempt scored higher. Any AI failure before a usable first
+    draft exists falls back to the local rewrite; a refinement failure
+    keeps the first draft. Local path (no AI key): a single deterministic
+    pass via ``_local_cv_rewrite``.
+    """
+    if ai_available():
+        try:
+            first_text = _cv_with_ai(resume_text, job_description)
+        except Exception as exc:
+            logger.warning("AI CV generation failed, falling back to local: %s", exc)
+        else:
+            first_ats = score_ats(first_text, job_description)
+            if first_ats["score"] >= 90:
+                return {"cv_text": first_text, "ats": first_ats, "source": "ai", "attempts": 1}
+            try:
+                second_text = _cv_with_ai(resume_text, job_description, prior_ats=first_ats)
+                second_ats = score_ats(second_text, job_description)
+            except Exception as exc:
+                logger.warning("AI CV refinement failed, keeping first draft: %s", exc)
+                return {"cv_text": first_text, "ats": first_ats, "source": "ai", "attempts": 2}
+            if second_ats["score"] >= first_ats["score"]:
+                return {"cv_text": second_text, "ats": second_ats, "source": "ai", "attempts": 2}
+            return {"cv_text": first_text, "ats": first_ats, "source": "ai", "attempts": 2}
+
+    local_text = _local_cv_rewrite(resume_text, job_description)
+    local_ats = score_ats(local_text, job_description)
+    return {"cv_text": local_text, "ats": local_ats, "source": "local", "attempts": 1}
+
+
+def _cv_with_ai(
+    resume_text: str, job_description: str, prior_ats: Optional[Dict] = None
+) -> str:
+    models = _provider_config()["models"]
+    prompt = _cv_prompt(resume_text, job_description, prior_ats)
+    last_error: Optional[Exception] = None
+    for model in models:
+        try:
+            content = _chat_completion(model, prompt, temperature=0.4, max_tokens=1200)
+            data = _extract_json(content)
+            cv_text = str(data.get("cv_text") or "")
+            if cv_text.strip():
+                return _strip_dashes(cv_text)
+        except Exception as exc:
+            logger.info("model %s failed, trying next: %s", model, exc)
+            last_error = exc
+    raise last_error if last_error else RuntimeError("empty response from all models")
+
+
+def _cv_prompt(resume_text: str, job_description: str, prior_ats: Optional[Dict]) -> str:
+    base = f"""You are an expert resume writer helping a candidate tailor their CV to
+a specific job description for an Applicant Tracking System (ATS) screen.
+
+Rewrite the RESUME below as a complete, ready-to-use CV tailored to the JOB
+DESCRIPTION. Respond with STRICT JSON matching this schema (no markdown, no
+commentary, JSON only):
+
+{{
+  "cv_text": "<the full rewritten CV as plain text>"
+}}
+
+Formatting requirements for cv_text:
+- Use standard section headers, each on its own line: SUMMARY, EXPERIENCE,
+  EDUCATION, SKILLS (plus others like PROJECTS if the resume supports them).
+- Keep the candidate's real name, contact details (email/phone if present),
+  employers, job titles, dates, and degrees exactly as given; never invent
+  or alter them.
+- Do not invent or fabricate skills, employers, achievements, or
+  qualifications not evidenced in the source resume. You may reorder,
+  rephrase, tighten wording, and quantify existing achievements only where
+  plausible from the source. You may restate a skill using the job
+  description's exact terminology only when it is a synonym for something
+  already in the resume (for example the resume says "JS" and the job
+  wants "JavaScript").
+- Where the resume supports it, add numbers to achievements (%, counts,
+  time saved) to make impact concrete.
+- Weave in the job description's key terms naturally into the SUMMARY and
+  SKILLS sections, and near the top of relevant EXPERIENCE bullets.
+
+Write in a natural, human voice: plain, direct language. Do not use em
+dashes; use commas or periods instead. Avoid buzzwords and stiff corporate
+phrasing.
+
+RESUME:
+{resume_text[:8000]}
+
+JOB DESCRIPTION:
+{job_description[:4000]}
+"""
+    if not prior_ats:
+        return base
+    return base + f"""
+Your previous attempt scored {prior_ats['score']}/100 on an ATS check. Fix
+these specific gaps without losing what already worked:
+{_describe_gaps(prior_ats)}
+"""
+
+
+def _describe_gaps(ats: Dict) -> str:
+    lines: List[str] = []
+    missing_skills = ats["coverage"]["missing_skills"]
+    if missing_skills:
+        lines.append(
+            "- Missing keywords the job asks for: "
+            f"{', '.join(missing_skills)}. Only include ones truthfully "
+            "supported by the resume."
+        )
+    missing_sections = ats["sections"]["missing"]
+    if missing_sections:
+        lines.append(f"- Missing standard section headers: {', '.join(missing_sections)}.")
+    if not ats["contact_info"]["has_email"]:
+        lines.append(
+            "- No email address found; keep the candidate's email from the "
+            "source resume visible near the top."
+        )
+    if not ats["contact_info"]["has_phone"]:
+        lines.append(
+            "- No phone number found; keep the candidate's phone number "
+            "from the source resume visible near the top."
+        )
+    if ats["quantified_achievements"]["count"] < 3:
+        lines.append(
+            "- Too few quantified achievements. Add numbers to more "
+            "bullets where plausible from the source."
+        )
+    if ats["keyword_placement"]["score"] < 10:
+        lines.append(
+            "- The job's top skills should appear earlier, in the SUMMARY "
+            "or near the top of SKILLS/EXPERIENCE."
+        )
+    return "\n".join(lines) if lines else "- Tighten wording and strengthen keyword usage throughout."
+
+
+def _local_cv_rewrite(resume_text: str, job_description: str) -> str:
+    """Deterministic, no-AI CV rewrite.
+
+    Never invents content: only surfaces skills already present in the
+    resume (via ``analyze_match``) into a SKILLS section when one isn't
+    already there, and adds a factual SUMMARY when one is missing. The
+    rest of the resume text is left unchanged.
+    """
+    resume_text = resume_text or ""
+    found = set(score_ats(resume_text, job_description)["sections"]["found"])
+
+    prefix_parts: List[str] = []
+    if "Skills" not in found:
+        matched = analyze_match(resume_text, job_description)["matching_skills"]
+        if matched:
+            prefix_parts.append("SKILLS\n" + ", ".join(matched))
+    if "Summary" not in found:
+        prefix_parts.append("SUMMARY\n" + _local_summary(analyze_match(resume_text, job_description)))
+
+    if not prefix_parts:
+        return resume_text
+    return "\n\n".join(prefix_parts) + "\n\n" + resume_text
 
 
 # --------------------------------------------------------------------------- #
