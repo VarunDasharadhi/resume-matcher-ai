@@ -7,6 +7,7 @@ import json
 import logging
 
 import httpx
+import pytest
 
 import utils.analysis as analysis
 
@@ -403,6 +404,7 @@ def test_generate_ats_cv_keeps_first_draft_when_refinement_scores_lower(monkeypa
 
 def test_generate_ats_cv_refinement_failure_keeps_first_draft(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_cv = "SKILLS\nPython\n"
     calls = []
 
@@ -423,6 +425,7 @@ def test_generate_ats_cv_refinement_failure_keeps_first_draft(monkeypatch):
 
 def test_generate_ats_cv_falls_back_to_local_when_ai_fails_outright(monkeypatch, caplog):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     def boom(*args, **kwargs):
         raise RuntimeError("network down")
@@ -448,3 +451,82 @@ def test_generate_ats_cv_prompt_states_no_fabrication_guardrail(monkeypatch):
     monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     analysis.generate_ats_cv("Python developer.", "Need Python.")
     assert "invent" in captured["prompt"].lower() or "fabricat" in captured["prompt"].lower()
+
+
+def test_gemini_chat_completion_posts_payload_and_parses_text(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+    captured = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        captured["headers"] = dict(request.headers)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={"candidates": [{"content": {"parts": [{"text": "  hi from gemini  "}]}}]},
+        )
+
+    fake = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+    )
+    monkeypatch.setattr(analysis, "_gemini_client", lambda: fake)
+
+    out = analysis._gemini_chat_completion("PROMPT", max_tokens=500)
+    assert out == "hi from gemini"
+    assert captured["url"].endswith("/models/gemini-flash-lite-latest:generateContent")
+    assert captured["headers"]["x-goog-api-key"] == "gem-key"
+    assert captured["body"]["contents"] == [{"parts": [{"text": "PROMPT"}]}]
+    assert captured["body"]["generationConfig"]["maxOutputTokens"] == 500
+
+
+def test_cv_with_ai_falls_back_to_gemini_when_openrouter_fails(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+
+    def boom(model, prompt, **kwargs):
+        raise RuntimeError("openrouter down")
+
+    def fake_gemini(prompt, max_tokens):
+        return json.dumps({"cv_text": "SUMMARY\nFrom Gemini.\n"})
+
+    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    monkeypatch.setattr(analysis, "_gemini_chat_completion", fake_gemini)
+
+    cv_text = analysis._cv_with_ai("Python developer.", "Need Python.")
+    assert cv_text == "SUMMARY\nFrom Gemini.\n"
+
+
+def test_generate_ats_cv_falls_back_to_local_when_ai_and_gemini_both_fail(monkeypatch, caplog):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("all providers down")
+
+    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    monkeypatch.setattr(analysis, "_gemini_chat_completion", boom)
+
+    with caplog.at_level(logging.WARNING, logger="utils.analysis"):
+        result = analysis.generate_ats_cv(
+            "Python developer.", "Need a Python developer with Django."
+        )
+    assert result["source"] == "local"
+    assert result["attempts"] == 1
+
+
+def test_cv_with_ai_skips_gemini_when_key_not_configured(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def boom(model, prompt, **kwargs):
+        raise RuntimeError("openrouter down")
+
+    def gemini_should_not_be_called(*args, **kwargs):
+        raise AssertionError("Gemini fallback must not run without GEMINI_API_KEY")
+
+    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    monkeypatch.setattr(analysis, "_gemini_chat_completion", gemini_should_not_be_called)
+
+    with pytest.raises(RuntimeError, match="openrouter down"):
+        analysis._cv_with_ai("Python developer.", "Need Python.")

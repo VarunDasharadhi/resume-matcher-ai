@@ -186,7 +186,7 @@ def _cv_with_ai(
     last_error: Optional[Exception] = None
     for model in models:
         try:
-            content = _chat_completion(model, prompt, temperature=0.4, max_tokens=1200)
+            content = _chat_completion(model, prompt, temperature=0.4, max_tokens=2500)
             data = _extract_json(content)
             cv_text = str(data.get("cv_text") or "")
             if cv_text.strip():
@@ -194,6 +194,18 @@ def _cv_with_ai(
         except Exception as exc:
             logger.info("model %s failed, trying next: %s", model, exc)
             last_error = exc
+
+    if os.getenv("GEMINI_API_KEY"):
+        try:
+            content = _gemini_chat_completion(prompt, max_tokens=2500)
+            data = _extract_json(content)
+            cv_text = str(data.get("cv_text") or "")
+            if cv_text.strip():
+                return _strip_dashes(cv_text)
+        except Exception as exc:
+            logger.info("gemini fallback failed: %s", exc)
+            last_error = exc
+
     raise last_error if last_error else RuntimeError("empty response from all models")
 
 
@@ -350,6 +362,41 @@ def _chat_completion(model: str, prompt: str, temperature: float, max_tokens: in
     response.raise_for_status()
     data = response.json()
     return (data["choices"][0]["message"]["content"] or "").strip()
+
+
+GEMINI_MODEL = "gemini-flash-lite-latest"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+_gemini_client_cache: Optional[httpx.Client] = None
+
+
+def _gemini_client() -> httpx.Client:
+    """Build (or reuse) a pooled client for Gemini's direct API.
+
+    Google's API isn't OpenAI-compatible (different auth header, different
+    request/response shape), so this is kept separate from _http_client().
+    """
+    global _gemini_client_cache
+    if _gemini_client_cache is None:
+        _gemini_client_cache = httpx.Client(base_url=GEMINI_API_BASE, timeout=30.0)
+    return _gemini_client_cache
+
+
+def _gemini_chat_completion(prompt: str, max_tokens: int) -> str:
+    """Call Gemini directly. Used only as a last-resort CV-generation fallback
+    when GEMINI_API_KEY is configured and the OpenRouter/OpenAI chain fails.
+    """
+    response = _gemini_client().post(
+        f"/models/{GEMINI_MODEL}:generateContent",
+        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.4},
+        },
+    )
+    response.raise_for_status()
+    data = response.json()
+    return (data["candidates"][0]["content"]["parts"][0]["text"] or "").strip()
 
 
 def _extract_json(text: str) -> Dict:
