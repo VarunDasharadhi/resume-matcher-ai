@@ -155,11 +155,11 @@ def generate_ats_cv_draft(resume_text: str, job_description: str) -> Dict:
         except Exception as exc:
             logger.warning("AI CV generation failed, falling back to local: %s", exc)
         else:
-            ats = score_ats(text, job_description)
+            text, ats = _score_with_keyword_lead(text, job_description)
             return {"cv_text": text, "ats": ats, "source": "ai", "attempts": 1}
 
     local_text = _local_cv_rewrite(resume_text, job_description)
-    local_ats = score_ats(local_text, job_description)
+    local_text, local_ats = _score_with_keyword_lead(local_text, job_description)
     return {"cv_text": local_text, "ats": local_ats, "source": "local", "attempts": 1}
 
 
@@ -173,13 +173,42 @@ def refine_ats_cv(
     """
     try:
         refined_text = _cv_with_ai(resume_text, job_description, prior_ats=prior_ats)
-        refined_ats = score_ats(refined_text, job_description)
+        refined_text, refined_ats = _score_with_keyword_lead(refined_text, job_description)
     except Exception as exc:
         logger.warning("AI CV refinement failed, keeping prior draft: %s", exc)
         return {"cv_text": cv_text, "ats": prior_ats, "source": "ai", "attempts": 2}
     if refined_ats["score"] >= prior_ats["score"]:
         return {"cv_text": refined_text, "ats": refined_ats, "source": "ai", "attempts": 2}
     return {"cv_text": cv_text, "ats": prior_ats, "source": "ai", "attempts": 2}
+
+
+def _score_with_keyword_lead(cv_text: str, job_description: str) -> Tuple[str, Dict]:
+    """Score cv_text, then deterministically fix weak keyword placement
+    rather than relying on the model to have followed that instruction,
+    and re-score. Never invents skills; only repositions ones score_ats
+    itself already confirmed are present via coverage.matching_skills.
+    """
+    ats = score_ats(cv_text, job_description)
+    fixed_text = _ensure_keyword_lead(cv_text, ats)
+    if fixed_text != cv_text:
+        ats = score_ats(fixed_text, job_description)
+    return fixed_text, ats
+
+
+def _ensure_keyword_lead(cv_text: str, ats: Dict) -> str:
+    """Guarantee the resume's own matched skills appear in the CV's lead
+    (the window score_ats checks for keyword placement), instead of
+    relying on the model to have followed that instruction reliably.
+    Only ever uses skills score_ats already confirmed are present in the
+    resume (ats['coverage']['matching_skills']); never invents anything.
+    """
+    if ats["keyword_placement"]["score"] >= 10:
+        return cv_text
+    matched = ats["coverage"]["matching_skills"]
+    if not matched:
+        return cv_text
+    lead_skills = ", ".join(matched[:5])
+    return f"Core skills: {lead_skills}\n\n{cv_text}"
 
 
 def generate_ats_cv(resume_text: str, job_description: str) -> Dict:

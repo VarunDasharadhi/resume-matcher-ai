@@ -347,7 +347,8 @@ def test_generate_ats_cv_ai_succeeds_first_pass(monkeypatch):
     )
     assert result["source"] == "ai"
     assert result["attempts"] == 1
-    assert result["ats"]["score"] == 90
+    # placement was 2/10 before the deterministic keyword-lead fix; 8/10 higher now
+    assert result["ats"]["score"] == 98
     assert len(calls) == 1  # no refinement pass needed
 
 
@@ -376,8 +377,10 @@ def test_generate_ats_cv_refines_when_first_pass_under_ninety(monkeypatch):
     )
     assert result["source"] == "ai"
     assert result["attempts"] == 2
-    assert result["cv_text"] == strong_cv
-    assert result["ats"]["score"] == 90
+    # the deterministic keyword-lead fix prepends the resume's own matched
+    # skills, since strong_cv's placement is under 10 before that fix
+    assert result["cv_text"] == "Core skills: Python, Django, AWS, Docker\n\n" + strong_cv
+    assert result["ats"]["score"] == 98
     assert len(calls) == 2
     # the refinement prompt must reference the first attempt's specific gaps
     assert "Django" in calls[1] or "AWS" in calls[1] or "Docker" in calls[1]
@@ -399,7 +402,9 @@ def test_generate_ats_cv_keeps_first_draft_when_refinement_scores_lower(monkeypa
         "Python developer.", "Need a Python developer with Django, AWS and Docker."
     )
     assert result["attempts"] == 2
-    assert result["cv_text"] == decent_cv
+    # decent_cv's placement is under 10 before the deterministic fix, applied
+    # when it becomes the first draft, kept as-is when refinement scores lower
+    assert result["cv_text"] == "Core skills: Python, Django, AWS\n\n" + decent_cv
 
 
 def test_generate_ats_cv_refinement_failure_keeps_first_draft(monkeypatch):
@@ -420,7 +425,8 @@ def test_generate_ats_cv_refinement_failure_keeps_first_draft(monkeypatch):
     )
     assert result["source"] == "ai"
     assert result["attempts"] == 2
-    assert result["cv_text"] == weak_cv
+    # weak_cv's placement is under 10, fixed when it becomes the first draft
+    assert result["cv_text"] == "Core skills: Python\n\n" + weak_cv
 
 
 def test_generate_ats_cv_falls_back_to_local_when_ai_fails_outright(monkeypatch, caplog):
@@ -543,7 +549,8 @@ def test_generate_ats_cv_draft_returns_ai_result_with_attempts_one(monkeypatch):
     result = analysis.generate_ats_cv_draft("Python developer.", "Need Python and Django.")
     assert result["source"] == "ai"
     assert result["attempts"] == 1
-    assert result["cv_text"] == good_cv
+    # good_cv's placement is under 10, fixed by the deterministic keyword-lead
+    assert result["cv_text"] == "Core skills: Python, Django\n\n" + good_cv
     assert 0 <= result["ats"]["score"] <= 100
 
 
@@ -561,7 +568,8 @@ def test_generate_ats_cv_draft_does_not_auto_refine_when_under_ninety(monkeypatc
         "Python developer.", "Need a Python developer with Django, AWS and Docker."
     )
     assert result["attempts"] == 1
-    assert result["cv_text"] == weak_cv
+    # weak_cv's placement is under 10, fixed by the deterministic keyword-lead
+    assert result["cv_text"] == "Core skills: Python\n\n" + weak_cv
     assert len(calls) == 1  # draft never triggers a second AI call on its own
 
 
@@ -622,7 +630,8 @@ def test_refine_ats_cv_returns_refined_when_it_scores_higher(monkeypatch):
     )
     assert result["source"] == "ai"
     assert result["attempts"] == 2
-    assert result["cv_text"] == strong_cv
+    # strong_cv's placement is under 10, fixed by the deterministic keyword-lead
+    assert result["cv_text"] == "Core skills: Python, Django, AWS, Docker\n\n" + strong_cv
     assert len(calls) == 1
     # the refine prompt must reference the prior attempt's specific gaps
     assert "Django" in calls[0] or "AWS" in calls[0] or "Docker" in calls[0]
@@ -696,5 +705,99 @@ def test_generate_ats_cv_still_composes_draft_and_refine(monkeypatch):
     )
     assert result["source"] == "ai"
     assert result["attempts"] == 2
-    assert result["cv_text"] == strong_cv
+    # strong_cv's placement is under 10, fixed by the deterministic keyword-lead
+    assert result["cv_text"] == "Core skills: Python, Django, AWS, Docker\n\n" + strong_cv
     assert len(calls) == 2
+
+
+def test_ensure_keyword_lead_injects_when_placement_low_and_skills_matched():
+    cv_text = "SKILLS\nPython, Django\n"
+    ats = analysis.score_ats(cv_text, "Need Python and Django.")
+    assert ats["keyword_placement"]["score"] < 10
+    assert set(ats["coverage"]["matching_skills"]) == {"Python", "Django"}
+
+    fixed = analysis._ensure_keyword_lead(cv_text, ats)
+    assert fixed.startswith("Core skills:")
+    lead_line = fixed.split("\n", 1)[0]
+    assert "Python" in lead_line and "Django" in lead_line
+    assert fixed.endswith(cv_text)
+
+
+def test_ensure_keyword_lead_noop_when_placement_already_full():
+    cv_text = (
+        "Python and Django developer with five years building backend systems.\n\n"
+        "EXPERIENCE\nBackend Developer, Acme Corp\n"
+        "- Built and maintained internal tools used daily by the support team.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django\n"
+    )
+    ats = analysis.score_ats(cv_text, "Need Python and Django.")
+    assert ats["keyword_placement"]["score"] == 10
+    assert analysis._ensure_keyword_lead(cv_text, ats) == cv_text
+
+
+def test_ensure_keyword_lead_noop_when_no_matching_skills():
+    cv_text = "SKILLS\nCooking\n"
+    ats = analysis.score_ats(cv_text, "Need Python and Django.")
+    assert ats["coverage"]["matching_skills"] == []
+    assert analysis._ensure_keyword_lead(cv_text, ats) == cv_text
+
+
+def test_generate_ats_cv_draft_fixes_keyword_placement_deterministically(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    weak_placement_cv = (
+        "Jane Doe\njane.doe@example.com | (555) 111-2222\n\n"
+        "EXPERIENCE\nBackend Developer, Acme Corp\n"
+        "- Built and maintained internal tools used daily by the support team.\n"
+        "- Collaborated closely with product and design on shipping new features.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django\n"
+    )
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": weak_placement_cv})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.generate_ats_cv_draft(
+        "Python developer with Django experience.", "Need Python and Django."
+    )
+    assert result["ats"]["keyword_placement"]["score"] == 10
+    assert result["cv_text"].startswith("Core skills:")
+
+
+def test_refine_ats_cv_fixes_keyword_placement_deterministically(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    weak_placement_cv = (
+        "Jane Doe\njane.doe@example.com | (555) 111-2222\n\n"
+        "EXPERIENCE\nBackend Developer, Acme Corp\n"
+        "- Built and maintained internal tools used daily by the support team.\n"
+        "- Collaborated closely with product and design on shipping new features.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django\n"
+    )
+    prior_ats = analysis.score_ats("SKILLS\nPython\n", "Need Python and Django.")
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": weak_placement_cv})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.refine_ats_cv(
+        "SKILLS\nPython\n", "Python developer with Django experience.",
+        "Need Python and Django.", prior_ats,
+    )
+    assert result["ats"]["keyword_placement"]["score"] == 10
+    assert result["cv_text"].startswith("Core skills:")
+
+
+def test_generate_ats_cv_draft_local_path_also_fixes_keyword_placement(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    resume = (
+        "A dedicated engineer who genuinely cares about the craft and the "
+        "people they build software with, always pushing for quality and "
+        "shipping things that matter to real users every single day.\n\n"
+        "SKILLS\nPython, Django\n"
+    )
+    result = analysis.generate_ats_cv_draft(resume, "Need Python and Django.")
+    assert result["ats"]["keyword_placement"]["score"] == 10
+    assert result["cv_text"].startswith("Core skills:")

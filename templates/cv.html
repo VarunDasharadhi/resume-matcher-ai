@@ -46,10 +46,22 @@
       <li class="ats-row"><span>Keyword placement</span><strong>{{ ats.keyword_placement.score }}/10</strong></li>
     </ul>
     {% if ats.coverage.missing_skills %}
-    <p class="ats-hint">Still missing: {{ ats.coverage.missing_skills | join(', ') }}</p>
+    <p class="ats-hint">Still missing: {{ ats.coverage.missing_skills | join(', ') }}. Add these below only if you genuinely have experience with them, then click Re-check ATS score. This app never adds them for you, since it can't verify what's true.</p>
     {% endif %}
     {% if ats.sections.missing %}
-    <p class="ats-hint">Missing sections: {{ ats.sections.missing | join(', ') }}</p>
+    <p class="ats-hint">Missing sections: {{ ats.sections.missing | join(', ') }}. Add a header with that exact name below.</p>
+    {% endif %}
+    {% if not ats.contact_info.has_email %}
+    <p class="ats-hint">No email address detected. Add yours near the top.</p>
+    {% endif %}
+    {% if not ats.contact_info.has_phone %}
+    <p class="ats-hint">No phone number detected. Add yours near the top.</p>
+    {% endif %}
+    {% if ats.quantified_achievements.score < 10 %}
+    <p class="ats-hint">Add numbers to more bullets (%, counts, dollars saved, time saved) where true, to strengthen quantified achievements.</p>
+    {% endif %}
+    {% if ats.keyword_placement.score < 10 %}
+    <p class="ats-hint">Move your top skills earlier in the CV, ideally in the first couple of lines.</p>
     {% endif %}
     {% if can_refine %}
     <form method="post" action="{{ url_for('cv_refine') }}" id="cv-refine-form" data-progress="cv-refine">

@@ -264,6 +264,39 @@ def test_cv_rescore_missing_job_description_redirects(client):
     assert resp.status_code == 302
 
 
+def test_cv_rescore_shows_actionable_hints_for_weak_components(client):
+    resp = client.post("/cv/rescore", data={
+        "cv_text": "SKILLS\nPython\n",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+        "resume_text": "Python developer.",
+    })
+    assert resp.status_code == 200
+    assert b"No email address detected" in resp.data
+    assert b"No phone number detected" in resp.data
+    assert b"strengthen quantified achievements" in resp.data
+    assert b"Missing sections" in resp.data
+    assert b"Still missing" in resp.data
+    assert b"never adds them for you" in resp.data
+
+
+def test_cv_rescore_hides_contact_hints_when_already_present(client):
+    resp = client.post("/cv/rescore", data={
+        "cv_text": (
+            "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
+            "SUMMARY\nPython developer.\n\n"
+            "EXPERIENCE\nBackend Engineer, Acme Corp\n"
+            "- Reduced latency by 40% for 10,000 users.\n\n"
+            "EDUCATION\nB.S. Computer Science\n\n"
+            "SKILLS\nPython\n"
+        ),
+        "job_description": "Need a Python developer.",
+        "resume_text": "Python developer.",
+    })
+    assert resp.status_code == 200
+    assert b"No email address detected" not in resp.data
+    assert b"No phone number detected" not in resp.data
+
+
 def test_download_cv_returns_pdf(client):
     resp = client.post("/download/cv", data={"cv_text": "SUMMARY\nA great candidate."})
     assert resp.status_code == 200
