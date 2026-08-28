@@ -27,12 +27,14 @@ from flask import (
     url_for,
 )
 
+from utils import analysis
 from utils.analysis import (
     ai_available,
     analyze_resume,
-    generate_ats_cv,
+    generate_ats_cv_draft,
     generate_cover_letter,
     provider_label,
+    refine_ats_cv,
 )
 from utils.ats_scorer import score_ats
 from utils.matcher import analyze_match
@@ -190,13 +192,15 @@ def cv_generator():
         flash("That session data was lost. Please run the analysis again.")
         return redirect(url_for("index"))
 
-    result = generate_ats_cv(resume_text, job_description)
+    result = generate_ats_cv_draft(resume_text, job_description)
+    can_refine = result["source"] == "ai" and result["ats"]["score"] < 90
     return render_template(
         "cv.html",
         cv_text=result["cv_text"],
         ats=result["ats"],
         source=result["source"],
         attempts=result["attempts"],
+        can_refine=can_refine,
         resume_text=resume_text,
         job_description=job_description,
         analysis_json=analysis_json,
@@ -222,6 +226,39 @@ def cv_rescore():
         ats=ats,
         source=None,
         attempts=None,
+        can_refine=False,
+        resume_text=resume_text,
+        job_description=job_description,
+        analysis_json=analysis_json,
+    )
+
+
+@app.route("/cv/refine", methods=["POST"])
+def cv_refine():
+    job_description = (request.form.get("job_description") or "").strip()
+    if not job_description:
+        flash("That session data was lost. Please run the analysis again.")
+        return redirect(url_for("index"))
+
+    cv_text = request.form.get("cv_text") or ""
+    resume_text = request.form.get("resume_text") or ""
+    analysis_json = request.form.get("analysis", "{}")
+    try:
+        prior_ats = json.loads(request.form.get("prior_ats") or "{}")
+    except ValueError:
+        prior_ats = {}
+    if not isinstance(prior_ats, dict) or "score" not in prior_ats:
+        flash("That session data was lost. Please run the analysis again.")
+        return redirect(url_for("index"))
+
+    result = refine_ats_cv(cv_text, resume_text, job_description, prior_ats)
+    return render_template(
+        "cv.html",
+        cv_text=result["cv_text"],
+        ats=result["ats"],
+        source=result["source"],
+        attempts=result["attempts"],
+        can_refine=False,
         resume_text=resume_text,
         job_description=job_description,
         analysis_json=analysis_json,

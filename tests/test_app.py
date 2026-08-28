@@ -327,3 +327,86 @@ def test_cv_rescore_preserves_analysis_for_back_link(client):
     assert resp.status_code == 200
     carried_analysis = _extract_analysis_attr(resp.data, rb'class="back-form"')
     assert b"77" in carried_analysis
+
+
+def test_cv_generator_no_longer_auto_refines(client, monkeypatch):
+    """/cv now returns the single-pass draft; a weak AI draft must NOT be
+    silently upgraded to a second pass within this one request."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    calls = []
+
+    def fake_chat(model, prompt, **kwargs):
+        calls.append(prompt)
+        return json.dumps({"cv_text": "SKILLS\nPython\n"})
+
+    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    resp = client.post("/cv", data={
+        "resume_text": "Python developer.",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+    })
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    assert b"Refine to close the gaps" in resp.data
+
+
+def test_cv_generator_hides_refine_when_score_already_high(client, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    good_cv = (
+        "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
+        "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
+        "EXPERIENCE\nBackend Engineer, Acme Corp\n"
+        "- Reduced API latency by 40% by migrating to Django and AWS Lambda.\n"
+        "- Led a team of 3 engineers, shipping 12 releases in 2025.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django, AWS, Docker, PostgreSQL\n"
+    )
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": good_cv})
+
+    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    resp = client.post("/cv", data={
+        "resume_text": "Python developer.",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+    })
+    assert resp.status_code == 200
+    assert b"Refine to close the gaps" not in resp.data
+
+
+def test_cv_refine_improves_score_and_renders(client, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    strong_cv = (
+        "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
+        "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
+        "EXPERIENCE\nBackend Engineer, Acme Corp\n"
+        "- Reduced API latency by 40% by migrating to Django and AWS Lambda.\n"
+        "- Led a team of 3 engineers, shipping 12 releases in 2025.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django, AWS, Docker, PostgreSQL\n"
+    )
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": strong_cv})
+
+    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    prior_ats_json = json.dumps(
+        app_module.score_ats("SKILLS\nPython\n", "Need a Python developer with Django, AWS and Docker.")
+    )
+    resp = client.post("/cv/refine", data={
+        "cv_text": "SKILLS\nPython\n",
+        "prior_ats": prior_ats_json,
+        "resume_text": "Python developer.",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+    })
+    assert resp.status_code == 200
+    assert b"AI, 2 passes" in resp.data
+    assert b"Refine to close the gaps" not in resp.data  # already attempted
+
+
+def test_cv_refine_missing_job_description_redirects(client):
+    resp = client.post("/cv/refine", data={
+        "cv_text": "SKILLS\nPython\n",
+        "prior_ats": "{}",
+        "job_description": "",
+    })
+    assert resp.status_code == 302
