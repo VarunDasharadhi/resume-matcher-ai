@@ -420,3 +420,10 @@ def test_cv_refine_rejects_non_numeric_score(client):
         "job_description": "Need a Python developer with Django, AWS and Docker.",
     })
     assert resp.status_code == 302
+
+
+def test_index_page_includes_progress_overlay_markup(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b'id="progress-overlay"' in resp.data
+    assert b'id="pw-stage"' in resp.data

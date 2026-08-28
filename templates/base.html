@@ -70,6 +70,16 @@
     </div>
   </div>
 
+  <div class="pw-overlay" id="progress-overlay" role="status" aria-live="polite">
+    <div class="pw-card">
+      <div class="pw-ring" aria-hidden="true"></div>
+      <p class="pw-eyebrow" id="pw-eyebrow">Working</p>
+      <h3 class="pw-stage" id="pw-stage">Getting started</h3>
+      <div class="pw-bar" aria-hidden="true"><span class="pw-bar-fill" id="pw-bar-fill"></span></div>
+      <p class="pw-meta"><span id="pw-elapsed">0:00</span> elapsed. Keep this tab open.</p>
+    </div>
+  </div>
+
   {% block scripts %}{% endblock %}
 
   <script>
@@ -135,6 +145,96 @@
         });
       });
     });
+  </script>
+
+  <script>
+    // Full-page progress overlay for actions that can take a while (AI CV
+    // generation/refinement). Purely client-side: a timer-driven stage
+    // label and an asymptotic progress bar, not tied to real backend
+    // state, closes naturally when the real response replaces the page.
+    (function () {
+      const overlay = document.getElementById('progress-overlay');
+      const stageEl = document.getElementById('pw-stage');
+      const barFill = document.getElementById('pw-bar-fill');
+      const elapsedEl = document.getElementById('pw-elapsed');
+      if (!overlay) return;
+
+      const STAGES = {
+        cv: [
+          [0, 'Reading your resume and the job description'],
+          [3, 'Drafting a CV tailored to this role'],
+          [20, 'Checking it against ATS rules'],
+          [35, 'Free AI models are busy right now. Still working.'],
+          [50, 'Almost there. This one is taking longer than usual.'],
+        ],
+        'cv-refine': [
+          [0, 'Reading the current draft and its ATS score'],
+          [3, 'Rewriting the sections that are losing points'],
+          [20, 'Re-checking it against ATS rules'],
+          [35, 'Free AI models are busy right now. Still working.'],
+          [50, 'Almost there. This one is taking longer than usual.'],
+        ],
+      };
+
+      let timer = null;
+      let startedAt = 0;
+
+      function tick(stages) {
+        const elapsedMs = Date.now() - startedAt;
+        const elapsedSec = elapsedMs / 1000;
+
+        let label = stages[0][1];
+        for (const [at, text] of stages) {
+          if (elapsedSec >= at) label = text;
+        }
+        stageEl.textContent = label;
+
+        const pct = 92 * (1 - Math.exp(-elapsedSec / 28));
+        barFill.style.width = pct + '%';
+
+        const totalSeconds = Math.floor(elapsedSec);
+        const m = Math.floor(totalSeconds / 60);
+        const s = String(totalSeconds % 60).padStart(2, '0');
+        elapsedEl.textContent = m + ':' + s;
+      }
+
+      function openOverlay(stageKey) {
+        const stages = STAGES[stageKey] || STAGES.cv;
+        startedAt = Date.now();
+        barFill.style.width = '0%';
+        stageEl.textContent = stages[0][1];
+        elapsedEl.textContent = '0:00';
+        overlay.classList.add('is-open');
+        timer = setInterval(() => tick(stages), 250);
+      }
+
+      function closeOverlay() {
+        overlay.classList.remove('is-open');
+        if (timer) { clearInterval(timer); timer = null; }
+      }
+
+      document.querySelectorAll('form[data-progress]').forEach(form => {
+        form.addEventListener('submit', () => {
+          openOverlay(form.getAttribute('data-progress'));
+        });
+      });
+
+      // bfcache guard: if the user navigates Back/Forward onto a page that
+      // still has the overlay marked open (or stuck is-active/is-dimmed
+      // button state from the shared click-feedback script above), clear
+      // it. Without this, Back onto a page mid-submit restores a page with
+      // a permanently stuck overlay and disabled buttons.
+      window.addEventListener('pageshow', e => {
+        if (!e.persisted) return;
+        closeOverlay();
+        document.querySelectorAll('.is-dimmed').forEach(el => el.classList.remove('is-dimmed'));
+        document.querySelectorAll('.is-active').forEach(el => el.classList.remove('is-active'));
+        document.querySelectorAll('.cta.is-loading').forEach(el => {
+          el.classList.remove('is-loading');
+          el.disabled = false;
+        });
+      });
+    })();
   </script>
 </body>
 </html>
