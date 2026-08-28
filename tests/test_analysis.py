@@ -530,3 +530,171 @@ def test_cv_with_ai_skips_gemini_when_key_not_configured(monkeypatch):
 
     with pytest.raises(RuntimeError, match="openrouter down"):
         analysis._cv_with_ai("Python developer.", "Need Python.")
+
+
+def test_generate_ats_cv_draft_returns_ai_result_with_attempts_one(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    good_cv = "SUMMARY\nPython developer.\n\nSKILLS\nPython, Django\n"
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": good_cv})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.generate_ats_cv_draft("Python developer.", "Need Python and Django.")
+    assert result["source"] == "ai"
+    assert result["attempts"] == 1
+    assert result["cv_text"] == good_cv
+    assert 0 <= result["ats"]["score"] <= 100
+
+
+def test_generate_ats_cv_draft_does_not_auto_refine_when_under_ninety(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    weak_cv = "SKILLS\nPython\n"
+    calls = []
+
+    def fake_chat(model, prompt, **kwargs):
+        calls.append(prompt)
+        return json.dumps({"cv_text": weak_cv})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.generate_ats_cv_draft(
+        "Python developer.", "Need a Python developer with Django, AWS and Docker."
+    )
+    assert result["attempts"] == 1
+    assert result["cv_text"] == weak_cv
+    assert len(calls) == 1  # draft never triggers a second AI call on its own
+
+
+def test_generate_ats_cv_draft_without_key_uses_local(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = analysis.generate_ats_cv_draft(
+        "Python developer with Django and AWS experience.",
+        "Need a Python developer with Django, AWS and Kubernetes.",
+    )
+    assert result["source"] == "local"
+    assert result["attempts"] == 1
+    assert "Python developer with Django and AWS experience." in result["cv_text"]
+
+
+def test_generate_ats_cv_draft_falls_back_to_local_when_ai_fails_outright(monkeypatch, caplog):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    with caplog.at_level(logging.WARNING, logger="utils.analysis"):
+        result = analysis.generate_ats_cv_draft(
+            "Python developer.", "Need a Python developer with Django."
+        )
+    assert result["source"] == "local"
+    assert result["attempts"] == 1
+    assert any("network down" in r.getMessage() for r in caplog.records)
+
+
+def test_refine_ats_cv_returns_refined_when_it_scores_higher(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    weak_cv = "SKILLS\nPython\n"
+    strong_cv = (
+        "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
+        "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
+        "EXPERIENCE\nBackend Engineer, Acme Corp\n"
+        "- Reduced API latency by 40% by migrating to Django and AWS Lambda.\n"
+        "- Led a team of 3 engineers, shipping 12 releases in 2025.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django, AWS, Docker, PostgreSQL\n"
+    )
+    prior_ats = analysis.score_ats(weak_cv, "Need a Python developer with Django, AWS and Docker.")
+    calls = []
+
+    def fake_chat(model, prompt, **kwargs):
+        calls.append(prompt)
+        return json.dumps({"cv_text": strong_cv})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.refine_ats_cv(
+        weak_cv,
+        "Python developer.",
+        "Need a Python developer with Django, AWS and Docker.",
+        prior_ats,
+    )
+    assert result["source"] == "ai"
+    assert result["attempts"] == 2
+    assert result["cv_text"] == strong_cv
+    assert len(calls) == 1
+    # the refine prompt must reference the prior attempt's specific gaps
+    assert "Django" in calls[0] or "AWS" in calls[0] or "Docker" in calls[0]
+
+
+def test_refine_ats_cv_keeps_prior_draft_when_refinement_scores_lower(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    decent_cv = "SUMMARY\nOK\n\nSKILLS\nPython, Django, AWS\n"
+    worse_cv = "SKILLS\nPython\n"
+    prior_ats = analysis.score_ats(decent_cv, "Need a Python developer with Django, AWS and Docker.")
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": worse_cv})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.refine_ats_cv(
+        decent_cv,
+        "Python developer.",
+        "Need a Python developer with Django, AWS and Docker.",
+        prior_ats,
+    )
+    assert result["attempts"] == 2
+    assert result["cv_text"] == decent_cv
+    assert result["ats"] == prior_ats
+
+
+def test_refine_ats_cv_failure_keeps_prior_draft(monkeypatch, caplog):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    weak_cv = "SKILLS\nPython\n"
+    prior_ats = analysis.score_ats(weak_cv, "Need a Python developer with Django.")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("429 rate limited")
+
+    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    with caplog.at_level(logging.WARNING, logger="utils.analysis"):
+        result = analysis.refine_ats_cv(
+            weak_cv, "Python developer.", "Need a Python developer with Django.", prior_ats
+        )
+    assert result["source"] == "ai"
+    assert result["attempts"] == 2
+    assert result["cv_text"] == weak_cv
+    assert result["ats"] == prior_ats
+    assert any("429 rate limited" in r.getMessage() for r in caplog.records)
+
+
+def test_generate_ats_cv_still_composes_draft_and_refine(monkeypatch):
+    """generate_ats_cv's existing external contract must be unaffected by the split."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    weak_cv = "SKILLS\nPython\n"
+    strong_cv = (
+        "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
+        "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
+        "EXPERIENCE\nBackend Engineer, Acme Corp\n"
+        "- Reduced API latency by 40% by migrating to Django and AWS Lambda.\n"
+        "- Led a team of 3 engineers, shipping 12 releases in 2025.\n\n"
+        "EDUCATION\nB.S. Computer Science, State University\n\n"
+        "SKILLS\nPython, Django, AWS, Docker, PostgreSQL\n"
+    )
+    responses = [json.dumps({"cv_text": weak_cv}), json.dumps({"cv_text": strong_cv})]
+    calls = []
+
+    def fake_chat(model, prompt, **kwargs):
+        calls.append(prompt)
+        return responses[len(calls) - 1]
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+    result = analysis.generate_ats_cv(
+        "Python developer.", "Need a Python developer with Django, AWS and Docker."
+    )
+    assert result["source"] == "ai"
+    assert result["attempts"] == 2
+    assert result["cv_text"] == strong_cv
+    assert len(calls) == 2

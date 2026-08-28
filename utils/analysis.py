@@ -144,38 +144,57 @@ def generate_cover_letter(resume_text: str, job_description: str) -> str:
     return _strip_dashes(_cover_letter_local(resume_text, job_description))
 
 
-def generate_ats_cv(resume_text: str, job_description: str) -> Dict:
-    """Generate a tailored, ATS-optimized CV for a job description.
-
-    AI path (when configured): one pass, scored; if under 90, one
-    refinement pass fed the specific gaps from the first score, keeping
-    whichever attempt scored higher. Any AI failure before a usable first
-    draft exists falls back to the local rewrite; a refinement failure
-    keeps the first draft. Local path (no AI key): a single deterministic
-    pass via ``_local_cv_rewrite``.
+def generate_ats_cv_draft(resume_text: str, job_description: str) -> Dict:
+    """Generate the first-pass tailored CV: one AI attempt, or the local
+    rewrite if AI is unavailable or fails outright. Never auto-refines;
+    callers decide whether to call refine_ats_cv based on the score.
     """
     if ai_available():
         try:
-            first_text = _cv_with_ai(resume_text, job_description)
+            text = _cv_with_ai(resume_text, job_description)
         except Exception as exc:
             logger.warning("AI CV generation failed, falling back to local: %s", exc)
         else:
-            first_ats = score_ats(first_text, job_description)
-            if first_ats["score"] >= 90:
-                return {"cv_text": first_text, "ats": first_ats, "source": "ai", "attempts": 1}
-            try:
-                second_text = _cv_with_ai(resume_text, job_description, prior_ats=first_ats)
-                second_ats = score_ats(second_text, job_description)
-            except Exception as exc:
-                logger.warning("AI CV refinement failed, keeping first draft: %s", exc)
-                return {"cv_text": first_text, "ats": first_ats, "source": "ai", "attempts": 2}
-            if second_ats["score"] >= first_ats["score"]:
-                return {"cv_text": second_text, "ats": second_ats, "source": "ai", "attempts": 2}
-            return {"cv_text": first_text, "ats": first_ats, "source": "ai", "attempts": 2}
+            ats = score_ats(text, job_description)
+            return {"cv_text": text, "ats": ats, "source": "ai", "attempts": 1}
 
     local_text = _local_cv_rewrite(resume_text, job_description)
     local_ats = score_ats(local_text, job_description)
     return {"cv_text": local_text, "ats": local_ats, "source": "local", "attempts": 1}
+
+
+def refine_ats_cv(
+    cv_text: str, resume_text: str, job_description: str, prior_ats: Dict
+) -> Dict:
+    """One AI refinement pass over an existing AI-sourced draft, fed the
+    specific gaps from prior_ats. Keeps the prior draft if the refinement
+    fails or scores no higher. Always returns attempts=2, source="ai" (this
+    is only meaningful to call on a draft that came from AI).
+    """
+    try:
+        refined_text = _cv_with_ai(resume_text, job_description, prior_ats=prior_ats)
+        refined_ats = score_ats(refined_text, job_description)
+    except Exception as exc:
+        logger.warning("AI CV refinement failed, keeping prior draft: %s", exc)
+        return {"cv_text": cv_text, "ats": prior_ats, "source": "ai", "attempts": 2}
+    if refined_ats["score"] >= prior_ats["score"]:
+        return {"cv_text": refined_text, "ats": refined_ats, "source": "ai", "attempts": 2}
+    return {"cv_text": cv_text, "ats": prior_ats, "source": "ai", "attempts": 2}
+
+
+def generate_ats_cv(resume_text: str, job_description: str) -> Dict:
+    """Generate a tailored, ATS-optimized CV for a job description.
+
+    Full two-pass convenience wrapper over generate_ats_cv_draft and
+    refine_ats_cv: one AI pass, scored; if under 90 and the draft came from
+    AI, one refinement pass. Kept for callers that want the combined result
+    in one call; the web UI drives the two passes as separate requests
+    instead (see /cv and /cv/refine in app.py) so progress is visible.
+    """
+    draft = generate_ats_cv_draft(resume_text, job_description)
+    if draft["source"] != "ai" or draft["ats"]["score"] >= 90:
+        return draft
+    return refine_ats_cv(draft["cv_text"], resume_text, job_description, draft["ats"])
 
 
 def _cv_with_ai(
