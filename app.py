@@ -247,7 +247,7 @@ def cv_refine():
         prior_ats = json.loads(request.form.get("prior_ats") or "{}")
     except ValueError:
         prior_ats = {}
-    if not isinstance(prior_ats, dict) or "score" not in prior_ats:
+    if not isinstance(prior_ats, dict) or not isinstance(prior_ats.get("score"), (int, float)):
         flash("That session data was lost. Please run the analysis again.")
         return redirect(url_for("index"))
 

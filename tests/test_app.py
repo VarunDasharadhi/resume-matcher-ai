@@ -410,3 +410,13 @@ def test_cv_refine_missing_job_description_redirects(client):
         "job_description": "",
     })
     assert resp.status_code == 302
+
+
+def test_cv_refine_rejects_non_numeric_score(client):
+    """Malformed prior_ats with a non-numeric score must not cause a 500."""
+    resp = client.post("/cv/refine", data={
+        "cv_text": "SKILLS\nPython\n",
+        "prior_ats": '{"score": "not a number"}',
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+    })
+    assert resp.status_code == 302
