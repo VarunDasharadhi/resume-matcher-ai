@@ -427,3 +427,28 @@ def test_index_page_includes_progress_overlay_markup(client):
     assert resp.status_code == 200
     assert b'id="progress-overlay"' in resp.data
     assert b'id="pw-stage"' in resp.data
+
+
+def test_result_page_cv_form_has_progress_attribute(client):
+    pdf = _pdf_bytes("Python developer with Django, Flask, AWS, Git and PostgreSQL")
+    data = {
+        "job_description": "Need Python, Django, AWS, Docker and Kubernetes",
+        "resume": (BytesIO(pdf), "resume.pdf"),
+    }
+    resp = client.post("/analyze", data=data, content_type="multipart/form-data")
+    assert b'id="cv-form-launch"' in resp.data
+    assert b'data-progress="cv"' in resp.data
+
+
+def test_cv_refine_form_has_progress_attribute_when_refine_offered(client, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": "SKILLS\nPython\n"})
+
+    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    resp = client.post("/cv", data={
+        "resume_text": "Python developer.",
+        "job_description": "Need a Python developer with Django, AWS and Docker.",
+    })
+    assert b'data-progress="cv-refine"' in resp.data

@@ -51,6 +51,19 @@
     {% if ats.sections.missing %}
     <p class="ats-hint">Missing sections: {{ ats.sections.missing | join(', ') }}</p>
     {% endif %}
+    {% if can_refine %}
+    <form method="post" action="{{ url_for('cv_refine') }}" id="cv-refine-form" data-progress="cv-refine">
+      <textarea name="cv_text" id="refine-cv-text" hidden></textarea>
+      <input type="hidden" name="prior_ats" value='{{ ats | tojson }}'>
+      <textarea name="job_description" hidden>{{ job_description }}</textarea>
+      <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
+      <input type="hidden" name="analysis" value="{{ analysis_json }}">
+      <button type="submit" class="cta cta-amber" id="refine-btn">
+        <span class="cta-label">✦ Refine to close the gaps</span>
+        <span class="cta-spinner" aria-hidden="true"></span>
+      </button>
+    </form>
+    {% endif %}
   </div>
 </section>
 
@@ -118,6 +131,17 @@
       document.getElementById('download-cv-text').value =
         document.getElementById('cv-textarea').value;
     });
+
+    const refineForm = document.getElementById('cv-refine-form');
+    if (refineForm) {
+      refineForm.addEventListener('submit', () => {
+        document.getElementById('refine-cv-text').value =
+          document.getElementById('cv-textarea').value;
+        const btn = document.getElementById('refine-btn');
+        btn.classList.add('is-loading');
+        btn.disabled = true;
+      });
+    }
   })();
 </script>
 {% endblock %}
