@@ -70,13 +70,13 @@
     </div>
   </div>
 
-  <div class="pw-overlay" id="progress-overlay" role="status" aria-live="polite">
+  <div class="pw-overlay" id="progress-overlay" role="status">
     <div class="pw-card">
       <div class="pw-ring" aria-hidden="true"></div>
-      <p class="pw-eyebrow" id="pw-eyebrow">Working</p>
-      <h3 class="pw-stage" id="pw-stage">Getting started</h3>
+      <p class="pw-eyebrow">Working</p>
+      <h3 class="pw-stage" id="pw-stage" aria-live="polite">Getting started</h3>
       <div class="pw-bar" aria-hidden="true"><span class="pw-bar-fill" id="pw-bar-fill"></span></div>
-      <p class="pw-meta"><span id="pw-elapsed">0:00</span> elapsed. Keep this tab open.</p>
+      <p class="pw-meta" aria-hidden="true"><span id="pw-elapsed">0:00</span> elapsed. Keep this tab open.</p>
     </div>
   </div>
 
@@ -164,14 +164,14 @@
           [0, 'Reading your resume and the job description'],
           [3, 'Drafting a CV tailored to this role'],
           [20, 'Checking it against ATS rules'],
-          [35, 'Free AI models are busy right now. Still working.'],
+          [35, 'The AI is taking a while. Still working.'],
           [50, 'Almost there. This one is taking longer than usual.'],
         ],
         'cv-refine': [
           [0, 'Reading the current draft and its ATS score'],
           [3, 'Rewriting the sections that are losing points'],
           [20, 'Re-checking it against ATS rules'],
-          [35, 'Free AI models are busy right now. Still working.'],
+          [35, 'The AI is taking a while. Still working.'],
           [50, 'Almost there. This one is taking longer than usual.'],
         ],
       };
@@ -187,7 +187,7 @@
         for (const [at, text] of stages) {
           if (elapsedSec >= at) label = text;
         }
-        stageEl.textContent = label;
+        if (stageEl.textContent !== label) { stageEl.textContent = label; }
 
         const pct = 92 * (1 - Math.exp(-elapsedSec / 28));
         barFill.style.width = pct + '%';
@@ -200,6 +200,7 @@
 
       function openOverlay(stageKey) {
         const stages = STAGES[stageKey] || STAGES.cv;
+        if (timer) { clearInterval(timer); timer = null; }
         startedAt = Date.now();
         barFill.style.width = '0%';
         stageEl.textContent = stages[0][1];

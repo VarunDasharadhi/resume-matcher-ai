@@ -53,8 +53,7 @@
     {% endif %}
     {% if can_refine %}
     <form method="post" action="{{ url_for('cv_refine') }}" id="cv-refine-form" data-progress="cv-refine">
-      <textarea name="cv_text" id="refine-cv-text" hidden></textarea>
-      <input type="hidden" name="prior_ats" value='{{ ats | tojson }}'>
+      <textarea name="cv_text" id="refine-cv-text" hidden>{{ cv_text }}</textarea>
       <textarea name="job_description" hidden>{{ job_description }}</textarea>
       <textarea name="resume_text" hidden>{{ resume_text }}</textarea>
       <input type="hidden" name="analysis" value="{{ analysis_json }}">

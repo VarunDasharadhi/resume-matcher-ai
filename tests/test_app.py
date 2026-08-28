@@ -12,6 +12,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 import app as app_module
+import utils.analysis as analysis
 from utils.matcher import analyze_match
 
 
@@ -239,6 +240,7 @@ def test_cv_generator_local_engine_renders(client):
     assert b"Tailored CV" in resp.data
     assert b"Re-check ATS score" in resp.data
     assert b'name="cv_text"' in resp.data
+    assert b"Refine to close the gaps" not in resp.data
 
 
 def test_cv_generator_missing_fields_redirects(client):
@@ -254,6 +256,7 @@ def test_cv_rescore_preserves_edited_text_and_rescoring(client):
     })
     assert resp.status_code == 200
     assert b"MY CUSTOM EDIT" in resp.data
+    assert b"Refine to close the gaps" not in resp.data
 
 
 def test_cv_rescore_missing_job_description_redirects(client):
@@ -339,7 +342,7 @@ def test_cv_generator_no_longer_auto_refines(client, monkeypatch):
         calls.append(prompt)
         return json.dumps({"cv_text": "SKILLS\nPython\n"})
 
-    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     resp = client.post("/cv", data={
         "resume_text": "Python developer.",
         "job_description": "Need a Python developer with Django, AWS and Docker.",
@@ -364,7 +367,7 @@ def test_cv_generator_hides_refine_when_score_already_high(client, monkeypatch):
     def fake_chat(model, prompt, **kwargs):
         return json.dumps({"cv_text": good_cv})
 
-    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     resp = client.post("/cv", data={
         "resume_text": "Python developer.",
         "job_description": "Need a Python developer with Django, AWS and Docker.",
@@ -388,13 +391,9 @@ def test_cv_refine_improves_score_and_renders(client, monkeypatch):
     def fake_chat(model, prompt, **kwargs):
         return json.dumps({"cv_text": strong_cv})
 
-    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
-    prior_ats_json = json.dumps(
-        app_module.score_ats("SKILLS\nPython\n", "Need a Python developer with Django, AWS and Docker.")
-    )
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     resp = client.post("/cv/refine", data={
         "cv_text": "SKILLS\nPython\n",
-        "prior_ats": prior_ats_json,
         "resume_text": "Python developer.",
         "job_description": "Need a Python developer with Django, AWS and Docker.",
     })
@@ -412,14 +411,23 @@ def test_cv_refine_missing_job_description_redirects(client):
     assert resp.status_code == 302
 
 
-def test_cv_refine_rejects_non_numeric_score(client):
-    """Malformed prior_ats with a non-numeric score must not cause a 500."""
+def test_cv_refine_works_without_prior_ats_field(client, monkeypatch):
+    """prior_ats is no longer read from the request at all; the route
+    computes it server-side from cv_text, so it must work correctly even
+    when the field is absent (or present but ignored)."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": "SKILLS\nPython\n"})
+
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     resp = client.post("/cv/refine", data={
         "cv_text": "SKILLS\nPython\n",
-        "prior_ats": '{"score": "not a number"}',
+        "resume_text": "Python developer.",
         "job_description": "Need a Python developer with Django, AWS and Docker.",
     })
-    assert resp.status_code == 302
+    assert resp.status_code == 200
+    assert b"Tailored CV" in resp.data
 
 
 def test_index_page_includes_progress_overlay_markup(client):
@@ -446,7 +454,7 @@ def test_cv_refine_form_has_progress_attribute_when_refine_offered(client, monke
     def fake_chat(model, prompt, **kwargs):
         return json.dumps({"cv_text": "SKILLS\nPython\n"})
 
-    monkeypatch.setattr(app_module.analysis, "_chat_completion", fake_chat)
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     resp = client.post("/cv", data={
         "resume_text": "Python developer.",
         "job_description": "Need a Python developer with Django, AWS and Docker.",

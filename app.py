@@ -27,7 +27,6 @@ from flask import (
     url_for,
 )
 
-from utils import analysis
 from utils.analysis import (
     ai_available,
     analyze_resume,
@@ -243,13 +242,7 @@ def cv_refine():
     cv_text = request.form.get("cv_text") or ""
     resume_text = request.form.get("resume_text") or ""
     analysis_json = request.form.get("analysis", "{}")
-    try:
-        prior_ats = json.loads(request.form.get("prior_ats") or "{}")
-    except ValueError:
-        prior_ats = {}
-    if not isinstance(prior_ats, dict) or not isinstance(prior_ats.get("score"), (int, float)):
-        flash("That session data was lost. Please run the analysis again.")
-        return redirect(url_for("index"))
+    prior_ats = score_ats(cv_text, job_description)
 
     result = refine_ats_cv(cv_text, resume_text, job_description, prior_ats)
     return render_template(
