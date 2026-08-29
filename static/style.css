@@ -486,6 +486,9 @@ textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3p
 }
 .cv-textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3px rgba(224,168,61,.15); }
 .cv-editor-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .cv-editor-actions { justify-content: center; }
+}
 
 /* --- progress overlay --- */
 .pw-overlay {
