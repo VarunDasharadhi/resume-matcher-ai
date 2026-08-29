@@ -337,7 +337,7 @@ textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3p
 
 /* ============ HOW ============ */
 .how { padding: 64px 0 0; }
-.how-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.how-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .how-card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius-sm); padding: 24px;
@@ -447,6 +447,7 @@ textarea:focus { outline: none; border-color: var(--amber); box-shadow: 0 0 0 3p
   .hero { grid-template-columns: 1fr; gap: 34px; padding-top: 48px; }
   .hero-lead { max-width: 52ch; }
   .preview-card { max-width: 360px; margin: 0 auto; }
+  .how-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 760px) {
