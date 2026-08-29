@@ -240,7 +240,8 @@ def test_cv_generator_local_engine_renders(client):
     assert b"Tailored CV" in resp.data
     assert b"Re-check ATS score" in resp.data
     assert b'name="cv_text"' in resp.data
-    assert b"Refine to close the gaps" not in resp.data
+    # Local drafts under 90 now also offer the AI refine pass.
+    assert b"Refine to close the gaps" in resp.data
 
 
 def test_cv_generator_missing_fields_redirects(client):
@@ -442,6 +443,29 @@ def test_cv_refine_missing_job_description_redirects(client):
         "job_description": "",
     })
     assert resp.status_code == 302
+
+
+def test_cv_refine_failure_keeps_draft_without_claiming_ai(client, monkeypatch, caplog):
+    """A failed refinement returns the draft unchanged, so the page must not
+    label it 'AI, 2 passes'."""
+    import logging
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("429 rate limited")
+
+    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    with caplog.at_level(logging.WARNING, logger="utils.analysis"):
+        resp = client.post("/cv/refine", data={
+            "cv_text": "SKILLS\nPython\n",
+            "resume_text": "Python developer.",
+            "job_description": "Need a Python developer with Django, AWS and Docker.",
+        })
+    assert resp.status_code == 200
+    assert b"SKILLS" in resp.data
+    assert b"AI, 2 passes" not in resp.data
 
 
 def test_cv_refine_works_without_prior_ats_field(client, monkeypatch):

@@ -166,10 +166,10 @@ def generate_ats_cv_draft(resume_text: str, job_description: str) -> Dict:
 def refine_ats_cv(
     cv_text: str, resume_text: str, job_description: str, prior_ats: Dict
 ) -> Dict:
-    """One AI refinement pass over an existing AI-sourced draft, fed the
+    """One AI refinement pass over an existing draft, fed the
     specific gaps from prior_ats. Keeps the prior draft if the refinement
-    fails or scores no higher. Always returns attempts=2, source="ai" (this
-    is only meaningful to call on a draft that came from AI).
+    fails or scores no higher. Always returns attempts=2, source="ai" (callers
+    decide how to present an unchanged result).
     """
     try:
         refined_text = _cv_with_ai(resume_text, job_description, prior_ats=prior_ats)

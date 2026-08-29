@@ -192,7 +192,9 @@ def cv_generator():
         return redirect(url_for("index"))
 
     result = generate_ats_cv_draft(resume_text, job_description)
-    can_refine = result["source"] == "ai" and result["ats"]["score"] < 90
+    # Offer the AI refine pass whenever the draft is under 90, regardless of
+    # whether the draft itself came from AI or from the local engine.
+    can_refine = result["ats"]["score"] < 90
     return render_template(
         "cv.html",
         cv_text=result["cv_text"],
@@ -245,12 +247,15 @@ def cv_refine():
     prior_ats = score_ats(cv_text, job_description)
 
     result = refine_ats_cv(cv_text, resume_text, job_description, prior_ats)
+    # If the refinement kept the prior draft (AI failed or scored no higher),
+    # do not label the unchanged text as an AI product.
+    refine_changed = result["cv_text"] != cv_text
     return render_template(
         "cv.html",
         cv_text=result["cv_text"],
         ats=result["ats"],
-        source=result["source"],
-        attempts=result["attempts"],
+        source=result["source"] if refine_changed else None,
+        attempts=result["attempts"] if refine_changed else None,
         can_refine=False,
         resume_text=resume_text,
         job_description=job_description,
