@@ -229,19 +229,8 @@ def generate_ats_cv(resume_text: str, job_description: str) -> Dict:
 def _cv_with_ai(
     resume_text: str, job_description: str, prior_ats: Optional[Dict] = None
 ) -> str:
-    models = _provider_config()["models"]
     prompt = _cv_prompt(resume_text, job_description, prior_ats)
     last_error: Optional[Exception] = None
-    for model in models:
-        try:
-            content = _chat_completion(model, prompt, temperature=0.4, max_tokens=2500)
-            data = _extract_json(content)
-            cv_text = str(data.get("cv_text") or "")
-            if cv_text.strip():
-                return _strip_dashes(cv_text)
-        except Exception as exc:
-            logger.info("model %s failed, trying next: %s", model, exc)
-            last_error = exc
 
     if os.getenv("GEMINI_API_KEY"):
         try:
@@ -251,7 +240,19 @@ def _cv_with_ai(
             if cv_text.strip():
                 return _strip_dashes(cv_text)
         except Exception as exc:
-            logger.info("gemini fallback failed: %s", exc)
+            logger.info("gemini failed, trying OpenRouter/OpenAI chain: %s", exc)
+            last_error = exc
+
+    models = _provider_config()["models"]
+    for model in models:
+        try:
+            content = _chat_completion(model, prompt, temperature=0.4, max_tokens=2500)
+            data = _extract_json(content)
+            cv_text = str(data.get("cv_text") or "")
+            if cv_text.strip():
+                return _strip_dashes(cv_text)
+        except Exception as exc:
+            logger.info("model %s failed, trying next: %s", model, exc)
             last_error = exc
 
     raise last_error if last_error else RuntimeError("empty response from all models")
@@ -431,8 +432,9 @@ def _gemini_client() -> httpx.Client:
 
 
 def _gemini_chat_completion(prompt: str, max_tokens: int) -> str:
-    """Call Gemini directly. Used only as a last-resort CV-generation fallback
-    when GEMINI_API_KEY is configured and the OpenRouter/OpenAI chain fails.
+    """Call Gemini directly. Tried first for CV generation when GEMINI_API_KEY
+    is configured (more reliable in practice than the free OpenRouter
+    auto-router for this prompt); the OpenRouter/OpenAI chain is the fallback.
     """
     response = _gemini_client().post(
         f"/models/{GEMINI_MODEL}:generateContent",

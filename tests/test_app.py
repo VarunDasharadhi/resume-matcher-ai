@@ -370,6 +370,7 @@ def test_cv_generator_no_longer_auto_refines(client, monkeypatch):
     """/cv now returns the single-pass draft; a weak AI draft must NOT be
     silently upgraded to a second pass within this one request."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     calls = []
 
     def fake_chat(model, prompt, **kwargs):
@@ -388,6 +389,7 @@ def test_cv_generator_no_longer_auto_refines(client, monkeypatch):
 
 def test_cv_generator_hides_refine_when_score_already_high(client, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     good_cv = (
         "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
         "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
@@ -412,6 +414,7 @@ def test_cv_generator_hides_refine_when_score_already_high(client, monkeypatch):
 
 def test_cv_refine_improves_score_and_renders(client, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     strong_cv = (
         "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
         "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
@@ -473,6 +476,7 @@ def test_cv_refine_works_without_prior_ats_field(client, monkeypatch):
     computes it server-side from cv_text, so it must work correctly even
     when the field is absent (or present but ignored)."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     def fake_chat(model, prompt, **kwargs):
         return json.dumps({"cv_text": "SKILLS\nPython\n"})
@@ -507,6 +511,7 @@ def test_result_page_cv_form_has_progress_attribute(client):
 
 def test_cv_refine_form_has_progress_attribute_when_refine_offered(client, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     def fake_chat(model, prompt, **kwargs):
         return json.dumps({"cv_text": "SKILLS\nPython\n"})

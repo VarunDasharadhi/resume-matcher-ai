@@ -326,6 +326,7 @@ def test_local_cv_rewrite_never_injects_match_report_verdict(monkeypatch):
 
 def test_generate_ats_cv_ai_succeeds_first_pass(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     good_cv = (
         "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
         "SUMMARY\nPython developer with 5 years building Django services on AWS.\n\n"
@@ -354,6 +355,7 @@ def test_generate_ats_cv_ai_succeeds_first_pass(monkeypatch):
 
 def test_generate_ats_cv_refines_when_first_pass_under_ninety(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_cv = "SKILLS\nPython\n"
     strong_cv = (
         "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
@@ -388,6 +390,7 @@ def test_generate_ats_cv_refines_when_first_pass_under_ninety(monkeypatch):
 
 def test_generate_ats_cv_keeps_first_draft_when_refinement_scores_lower(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     decent_cv = "SUMMARY\nOK\n\nSKILLS\nPython, Django, AWS\n"
     worse_cv = "SKILLS\nPython\n"
     responses = [json.dumps({"cv_text": decent_cv}), json.dumps({"cv_text": worse_cv})]
@@ -448,6 +451,7 @@ def test_generate_ats_cv_falls_back_to_local_when_ai_fails_outright(monkeypatch,
 
 def test_generate_ats_cv_prompt_states_no_fabrication_guardrail(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     captured = {}
 
     def fake_chat(model, prompt, **kwargs):
@@ -486,21 +490,44 @@ def test_gemini_chat_completion_posts_payload_and_parses_text(monkeypatch):
     assert captured["body"]["generationConfig"]["maxOutputTokens"] == 500
 
 
-def test_cv_with_ai_falls_back_to_gemini_when_openrouter_fails(monkeypatch):
+def test_cv_with_ai_tries_gemini_first_when_configured(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
 
-    def boom(model, prompt, **kwargs):
-        raise RuntimeError("openrouter down")
+    # _cv_with_ai's model loop catches Exception broadly, so a raising sentry
+    # here would be silently swallowed and prove nothing. Track calls instead.
+    openrouter_calls = []
+
+    def fake_chat(model, prompt, **kwargs):
+        openrouter_calls.append(model)
+        return json.dumps({"cv_text": "SUMMARY\nFrom OpenRouter.\n"})
 
     def fake_gemini(prompt, max_tokens):
         return json.dumps({"cv_text": "SUMMARY\nFrom Gemini.\n"})
 
-    monkeypatch.setattr(analysis, "_chat_completion", boom)
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
     monkeypatch.setattr(analysis, "_gemini_chat_completion", fake_gemini)
 
     cv_text = analysis._cv_with_ai("Python developer.", "Need Python.")
     assert cv_text == "SUMMARY\nFrom Gemini.\n"
+    assert openrouter_calls == [], "OpenRouter must not be called when Gemini succeeds first"
+
+
+def test_cv_with_ai_falls_back_to_openrouter_when_gemini_fails(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "gem-key")
+
+    def gemini_boom(prompt, max_tokens):
+        raise RuntimeError("gemini down")
+
+    def fake_chat(model, prompt, **kwargs):
+        return json.dumps({"cv_text": "SUMMARY\nFrom OpenRouter.\n"})
+
+    monkeypatch.setattr(analysis, "_gemini_chat_completion", gemini_boom)
+    monkeypatch.setattr(analysis, "_chat_completion", fake_chat)
+
+    cv_text = analysis._cv_with_ai("Python developer.", "Need Python.")
+    assert cv_text == "SUMMARY\nFrom OpenRouter.\n"
 
 
 def test_generate_ats_cv_falls_back_to_local_when_ai_and_gemini_both_fail(monkeypatch, caplog):
@@ -540,6 +567,7 @@ def test_cv_with_ai_skips_gemini_when_key_not_configured(monkeypatch):
 
 def test_generate_ats_cv_draft_returns_ai_result_with_attempts_one(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     good_cv = "SUMMARY\nPython developer.\n\nSKILLS\nPython, Django\n"
 
     def fake_chat(model, prompt, **kwargs):
@@ -556,6 +584,7 @@ def test_generate_ats_cv_draft_returns_ai_result_with_attempts_one(monkeypatch):
 
 def test_generate_ats_cv_draft_does_not_auto_refine_when_under_ninety(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_cv = "SKILLS\nPython\n"
     calls = []
 
@@ -604,6 +633,7 @@ def test_generate_ats_cv_draft_falls_back_to_local_when_ai_fails_outright(monkey
 
 def test_refine_ats_cv_returns_refined_when_it_scores_higher(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_cv = "SKILLS\nPython\n"
     strong_cv = (
         "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
@@ -639,6 +669,7 @@ def test_refine_ats_cv_returns_refined_when_it_scores_higher(monkeypatch):
 
 def test_refine_ats_cv_keeps_prior_draft_when_refinement_scores_lower(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     decent_cv = "SUMMARY\nOK\n\nSKILLS\nPython, Django, AWS\n"
     worse_cv = "SKILLS\nPython\n"
     prior_ats = analysis.score_ats(decent_cv, "Need a Python developer with Django, AWS and Docker.")
@@ -682,6 +713,7 @@ def test_refine_ats_cv_failure_keeps_prior_draft(monkeypatch, caplog):
 def test_generate_ats_cv_still_composes_draft_and_refine(monkeypatch):
     """generate_ats_cv's existing external contract must be unaffected by the split."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_cv = "SKILLS\nPython\n"
     strong_cv = (
         "John Doe\njohn.doe@example.com | (555) 123-4567\n\n"
@@ -745,6 +777,7 @@ def test_ensure_keyword_lead_noop_when_no_matching_skills():
 
 def test_generate_ats_cv_draft_fixes_keyword_placement_deterministically(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_placement_cv = (
         "Jane Doe\njane.doe@example.com | (555) 111-2222\n\n"
         "EXPERIENCE\nBackend Developer, Acme Corp\n"
@@ -767,6 +800,7 @@ def test_generate_ats_cv_draft_fixes_keyword_placement_deterministically(monkeyp
 
 def test_refine_ats_cv_fixes_keyword_placement_deterministically(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     weak_placement_cv = (
         "Jane Doe\njane.doe@example.com | (555) 111-2222\n\n"
         "EXPERIENCE\nBackend Developer, Acme Corp\n"
