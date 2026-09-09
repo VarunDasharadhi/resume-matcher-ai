@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Keeps the always-read state docs small enough that every session can afford them.
+#
+# Why this exists: AGENTS.md tells every session to read STATE.md and GOTCHAS.md at
+# startup, so every byte here is paid on every session in every repo that reads it.
+# These files were archived down to a few KB in July 2026 and grew back roughly 35x
+# by late August, because "keep it short" costs the writer nothing and the reader
+# everything. The convention did not hold on its own. This hook is the enforcement.
+#
+# Overflow is not deleted, it moves:
+#   session findings, narrative, history  -> docs/journal/YYYY-MM-DD.md
+#   long-form gotcha detail               -> docs/gotchas/<slug>.md (index line stays)
+#   dated decisions                       -> DECISIONS.md (append only, never rewritten)
+# Nothing reads those at startup; any session can grep them on demand.
+#
+# Bypassing with --no-verify breaks a standing rule in the user's global CLAUDE.md.
+# If a cap is genuinely wrong for the content, say so and get it changed. Do not
+# route around it.
+
+set -euo pipefail
+
+# path:max_bytes
+CAPS="STATE.md:12000 GOTCHAS.md:20000"
+
+fail=0
+for entry in $CAPS; do
+  path="${entry%%:*}"
+  cap="${entry##*:}"
+
+  # Only judge files this commit actually touches.
+  git diff --cached --name-only --diff-filter=ACM | grep -qx "$path" || continue
+
+  size=$(git cat-file -s "$(git rev-parse ":$path")" 2>/dev/null || echo 0)
+  [ "$size" -le "$cap" ] && continue
+
+  over=$(( size - cap ))
+  echo ""
+  echo "  BLOCKED: $path is ${size} bytes, cap is ${cap} (${over} over)."
+  echo ""
+  echo "  $path is read at startup by every session, so its size is a tax on all of them."
+  echo "  Do not trim by deleting information. Move it:"
+  echo "    - session findings / narrative / history -> docs/journal/$(date +%Y-%m-%d).md"
+  echo "    - long-form gotcha detail               -> docs/gotchas/<slug>.md, leave a one-line index entry"
+  echo "    - a dated decision                      -> DECISIONS.md (append, never rewrite a dated line)"
+  echo "  $path keeps only what is true right now."
+  echo ""
+  fail=1
+done
+
+if [ "$fail" -ne 0 ]; then
+  echo "  Commit refused. Do not use --no-verify."
+  echo ""
+  exit 1
+fi
